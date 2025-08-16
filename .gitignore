@@ -5,4 +5,5 @@ __pycache__/
 *.pyc
 database.db
 config.json
-shop.py
+
+shop.db

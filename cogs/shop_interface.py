@@ -63,34 +63,74 @@ class ShopInterface(commands.Cog):
             self.messages = self.config['MESSAGES']
             self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
         
-        # thay doi mau nut sang do
         @discord.ui.button(label="Tài Khoản", style=discord.ButtonStyle.danger, custom_id="shop_view:account")
         async def account_button_callback(self, interaction: discord.Interaction, button: Button):
             await interaction.response.defer(ephemeral=True)
             
             user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
-            embed = discord.Embed(
+            guild = interaction.guild
+
+            # Embed 1: so du
+            embed1 = discord.Embed(
                 title=self.messages['ACCOUNT_INFO_TITLE'],
                 description=self.messages['ACCOUNT_INFO_DESC'],
                 color=self.embed_color
             )
-            embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
-            embed.set_thumbnail(url=interaction.user.display_avatar.url)
-            
+            embed1.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+            embed1.set_thumbnail(url=interaction.user.display_avatar.url)
             balance_str = self.messages['BALANCE_FIELD_VALUE'].format(balance=user_data['balance'])
-            embed.add_field(name=f"```{self.messages['BALANCE_FIELD_NAME']}```", value=balance_str, inline=False)
-            
-            how_to_earn_desc = self.messages['HOW_TO_EARN_COIN_DESC'].format(
-                messages_per_coin=self.config['CURRENCY_RATES']['MESSAGES_PER_COIN'],
-                reactions_per_coin=self.config['CURRENCY_RATES']['REACTIONS_PER_COIN']
-            )
-            embed.add_field(name=f"```{self.messages['HOW_TO_EARN_COIN_TITLE']}```", value=how_to_earn_desc, inline=False)
-            
+            embed1.add_field(name=f"```{self.messages['BALANCE_FIELD_NAME']}```", value=balance_str, inline=False)
             if self.config.get('SHOP_EMBED_IMAGE_URL'):
-                embed.set_image(url=self.config['SHOP_EMBED_IMAGE_URL'])
+                embed1.set_image(url=self.config['SHOP_EMBED_IMAGE_URL'])
+
+            # Embed 2: bang rate
+            embed2 = discord.Embed(
+                title=self.messages['EARNING_RATES_TITLE'],
+                description=self.messages['EARNING_RATES_DESC'],
+                color=self.embed_color
+            )
+            
+            special_rates_list = []
+            # Xu ly categories
+            categories_config = self.config['CURRENCY_RATES'].get('categories', {})
+            if categories_config:
+                for cat_id, rates in categories_config.items():
+                    category = guild.get_channel(int(cat_id))
+                    if category:
+                        special_rates_list.append(f"**📁 Danh mục: {category.name}**")
+                        msg_rate = rates.get('MESSAGES_PER_COIN')
+                        react_rate = rates.get('REACTIONS_PER_COIN')
+                        if msg_rate:
+                            special_rates_list.append(f"> 💬 `{msg_rate}` tin nhắn = `1` coin")
+                        if react_rate:
+                            special_rates_list.append(f"> 💖 `{react_rate}` reactions = `1` coin")
+                        special_rates_list.append("") 
+
+            # Xu ly channels
+            channels_config = self.config['CURRENCY_RATES'].get('channels', {})
+            if channels_config:
+                for chan_id, rates in channels_config.items():
+                    channel = guild.get_channel(int(chan_id))
+                    if channel:
+                        special_rates_list.append(f"**#️⃣ Kênh: {channel.mention}**")
+                        msg_rate = rates.get('MESSAGES_PER_COIN')
+                        react_rate = rates.get('REACTIONS_PER_COIN')
+                        if msg_rate:
+                            special_rates_list.append(f"> 💬 `{msg_rate}` tin nhắn = `1` coin")
+                        if react_rate:
+                            special_rates_list.append(f"> 💖 `{react_rate}` reactions = `1` coin")
+                        special_rates_list.append("") 
+            
+            # Neu co rate dac biet thi moi them field
+            if special_rates_list:
+                if special_rates_list[-1] == "":
+                    special_rates_list.pop()
+                special_rates_desc = "\n".join(special_rates_list)
+                embed2.description += "\n\n" + special_rates_desc
             
             try:
-                await interaction.user.send(embed=embed)
+                # Gui 2 embeds
+                await interaction.user.send(embeds=[embed1, embed2])
                 await interaction.followup.send("✅ Đã gửi thông tin tài khoản vào tin nhắn riêng của bạn!", ephemeral=True)
             except discord.Forbidden:
                 await interaction.followup.send("⚠️ Tôi không thể gửi tin nhắn riêng cho bạn. Vui lòng bật tin nhắn từ thành viên server.", ephemeral=True)
