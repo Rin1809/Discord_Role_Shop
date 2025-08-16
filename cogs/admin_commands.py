@@ -29,7 +29,10 @@ class AdminCommands(commands.Cog):
             color=self.embed_color
         )
         
-        # them footer co ngan cach
+        # them thumbnail neu co
+        if self.config.get('SHOP_EMBED_THUMBNAIL_URL'):
+            embed.set_thumbnail(url=self.config.get('SHOP_EMBED_THUMBNAIL_URL'))
+
         footer_text = self.config['FOOTER_MESSAGES']['SHOP_PANEL']
         embed.set_footer(
             text=f"────────────────────\n{footer_text}", 

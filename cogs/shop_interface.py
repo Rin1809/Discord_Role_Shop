@@ -70,7 +70,7 @@ class ShopInterface(commands.Cog):
             user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
             guild = interaction.guild
 
-            # Embed 1: so du
+            # embed 1
             embed1 = discord.Embed(
                 title=self.messages['ACCOUNT_INFO_TITLE'],
                 description=self.messages['ACCOUNT_INFO_DESC'],
@@ -89,22 +89,24 @@ class ShopInterface(commands.Cog):
                 icon_url=self.bot.user.avatar.url
             )
 
-            # Embed 2: bang rate
+            # embed 2
             embed2 = discord.Embed(
                 title=self.messages['EARNING_RATES_TITLE'],
                 description=self.messages['EARNING_RATES_DESC'],
                 color=self.embed_color
             )
             
-            # them author va thumbnail server
             if guild.icon:
                 embed2.set_author(name=guild.name, icon_url=guild.icon.url)
                 embed2.set_thumbnail(url=guild.icon.url)
             else:
                 embed2.set_author(name=guild.name)
 
+            # them anh to neu co
+            if self.config.get('EARNING_RATES_IMAGE_URL'):
+                embed2.set_image(url=self.config.get('EARNING_RATES_IMAGE_URL'))
+
             special_rates_list = []
-            # Xu ly categories
             categories_config = self.config['CURRENCY_RATES'].get('categories', {})
             if categories_config:
                 for cat_id, rates in categories_config.items():
@@ -119,7 +121,6 @@ class ShopInterface(commands.Cog):
                             special_rates_list.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
                         special_rates_list.append("") 
 
-            # Xu ly channels
             channels_config = self.config['CURRENCY_RATES'].get('channels', {})
             if channels_config:
                 for chan_id, rates in channels_config.items():
