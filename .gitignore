@@ -1,0 +1,8 @@
+# .gitignore
+.env
+moitruongao/
+__pycache__/
+*.pyc
+database.db
+config.json
+shop.py
