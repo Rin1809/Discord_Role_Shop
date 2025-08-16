@@ -1,4 +1,3 @@
-# cogs/admin_commands.py
 import discord
 from discord import app_commands 
 from discord.ext import commands
@@ -8,6 +7,8 @@ class AdminCommands(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.config = bot.config
+        # mau embed chinh
+        self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
 
     shop = app_commands.Group(name="shop", description="Các lệnh quản lý shop role")
     coin = app_commands.Group(name="coin", description="Các lệnh quản lý tiền tệ")
@@ -26,9 +27,12 @@ class AdminCommands(commands.Cog):
         embed = discord.Embed(
             title=self.config['MESSAGES']['SHOP_EMBED_TITLE'],
             description=self.config['MESSAGES']['SHOP_EMBED_DESCRIPTION'],
-            color=discord.Color.purple()
+            color=self.embed_color
         )
         
+        if self.config.get('SHOP_EMBED_IMAGE_URL'):
+            embed.set_image(url=self.config.get('SHOP_EMBED_IMAGE_URL'))
+
         shop_cog = self.bot.get_cog("ShopInterface")
         if not shop_cog:
             return await interaction.response.send_message("Lỗi: Cog 'ShopInterface' chưa được tải.", ephemeral=True)
