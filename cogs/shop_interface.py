@@ -8,7 +8,6 @@ class ShopInterface(commands.Cog):
         self.bot = bot
         self.config = bot.config
         self.messages = self.config['MESSAGES']
-        # mau embed chinh
         self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
 
     class PurchaseModal(Modal, title="Mua Role"):
@@ -62,10 +61,10 @@ class ShopInterface(commands.Cog):
             self.bot = bot
             self.config = bot.config
             self.messages = self.config['MESSAGES']
-            # mau embed chinh
             self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
         
-        @discord.ui.button(label="Tài Khoản", style=discord.ButtonStyle.green, custom_id="shop_view:account")
+        # thay doi mau nut sang do
+        @discord.ui.button(label="Tài Khoản", style=discord.ButtonStyle.danger, custom_id="shop_view:account")
         async def account_button_callback(self, interaction: discord.Interaction, button: Button):
             await interaction.response.defer(ephemeral=True)
             
@@ -118,7 +117,7 @@ class ShopInterface(commands.Cog):
             
             await interaction.followup.send(embed=embed, ephemeral=True)
 
-        @discord.ui.button(label="Mua Role", style=discord.ButtonStyle.primary, custom_id="shop_view:purchase")
+        @discord.ui.button(label="Mua Role", style=discord.ButtonStyle.secondary, custom_id="shop_view:purchase")
         async def purchase_button_callback(self, interaction: discord.Interaction, button: Button):
             modal = ShopInterface.PurchaseModal(bot=self.bot)
             await interaction.response.send_modal(modal)
