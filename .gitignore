@@ -6,4 +6,4 @@ __pycache__/
 database.db
 config.json
 config_bk.json
-shop.db
+database/shop.db

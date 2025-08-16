@@ -3,6 +3,82 @@ from discord.ext import commands
 from discord.ui import Button, View, Modal, TextInput 
 from database import database as db
 
+# View moi cho nut 'Cach dao coins'
+class EarningRatesView(View):
+    def __init__(self, bot: commands.Bot):
+        super().__init__(timeout=None)
+        self.bot = bot
+        self.config = bot.config
+        self.messages = self.config['MESSAGES']
+        self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
+
+    @discord.ui.button(label="Cách Đào Coin", style=discord.ButtonStyle.success, emoji="💰")
+    async def show_rates_callback(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.defer(ephemeral=True)
+        guild = self.bot.get_guild(self.config['GUILD_ID'])
+        if not guild:
+            return await interaction.followup.send("Lỗi: Không tìm thấy server.", ephemeral=True)
+            
+        # Logic xay dung embed ty le dao coin
+        embed = discord.Embed(
+            title=self.messages['EARNING_RATES_TITLE'],
+            description=self.messages['EARNING_RATES_DESC'],
+            color=self.embed_color
+        )
+        
+        if guild.icon:
+            embed.set_author(name=guild.name, icon_url=guild.icon.url)
+            embed.set_thumbnail(url=guild.icon.url)
+        else:
+            embed.set_author(name=guild.name)
+
+        if self.config.get('EARNING_RATES_IMAGE_URL'):
+            embed.set_image(url=self.config.get('EARNING_RATES_IMAGE_URL'))
+
+        special_rates_list = []
+        categories_config = self.config['CURRENCY_RATES'].get('categories', {})
+        if categories_config:
+            for cat_id, rates in categories_config.items():
+                category = guild.get_channel(int(cat_id))
+                if category:
+                    special_rates_list.append(f"**<:g_chamhoi:1326543673957027961> Danh mục: {category.name}**")
+                    msg_rate = rates.get('MESSAGES_PER_COIN')
+                    react_rate = rates.get('REACTIONS_PER_COIN')
+                    if msg_rate:
+                        special_rates_list.append(f"> <a:timchat:1406136711741706301> `{msg_rate}` tin nhắn = `1` <a:coin:1406137409384480850>")
+                    if react_rate:
+                        special_rates_list.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
+                    special_rates_list.append("") 
+
+        channels_config = self.config['CURRENCY_RATES'].get('channels', {})
+        if channels_config:
+            for chan_id, rates in channels_config.items():
+                channel = guild.get_channel(int(chan_id))
+                if channel:
+                    special_rates_list.append(f"**<:channel:1406136670709092422> Kênh: {channel.mention}**")
+                    msg_rate = rates.get('MESSAGES_PER_COIN')
+                    react_rate = rates.get('REACTIONS_PER_COIN')
+                    if msg_rate:
+                        special_rates_list.append(f"> <a:timchat:1406136711741706301> `{msg_rate}` tin nhắn = `1` <a:coin:1406137409384480850>")
+                    if react_rate:
+                        special_rates_list.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
+                    special_rates_list.append("") 
+        
+        if special_rates_list:
+            if special_rates_list[-1] == "":
+                special_rates_list.pop()
+            special_rates_desc = "\n".join(special_rates_list)
+            embed.description += "\n\n" + special_rates_desc
+        
+        footer_text = self.config['FOOTER_MESSAGES']['EARNING_RATES']
+        embed.set_footer(
+            text=f"────────────────────\n{footer_text}",
+            icon_url=self.bot.user.avatar.url
+        )
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
 class ShopInterface(commands.Cog):
     def __init__(self, bot: commands.Bot): 
         self.bot = bot
@@ -15,19 +91,27 @@ class ShopInterface(commands.Cog):
         def __init__(self, bot: commands.Bot):
             super().__init__()
             self.bot = bot
-            self.add_item(TextInput(label="Số thứ tự của role", placeholder="Nhập số tương ứng với role bạn muốn mua..."))
+            self.config = bot.config 
+            self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
+            self.add_item(TextInput(
+                label="Số thứ tự của role", 
+                placeholder="Nhập số tương ứng với role bạn muốn mua...",
+                custom_id="purchase_role_id_input"
+            ))
 
         async def on_submit(self, interaction: discord.Interaction): 
+            await interaction.response.defer(ephemeral=True, thinking=True)
+            
             try:
                 role_number_input = int(self.children[0].value)
                 if role_number_input <= 0:
                     raise ValueError
             except (ValueError, TypeError):
-                return await interaction.response.send_message("⚠️ Vui lòng nhập một số thứ tự hợp lệ.", ephemeral=True)
+                return await interaction.followup.send("⚠️ Vui lòng nhập một số thứ tự hợp lệ.", ephemeral=True)
 
             shop_roles = db.get_shop_roles(interaction.guild.id)
             if not shop_roles or role_number_input > len(shop_roles):
-                return await interaction.response.send_message("⚠️ Số thứ tự này không tồn tại trong shop.", ephemeral=True)
+                return await interaction.followup.send("⚠️ Số thứ tự này không tồn tại trong shop.", ephemeral=True)
             
             selected_role_data = shop_roles[role_number_input - 1]
             role_id = selected_role_data['role_id']
@@ -35,45 +119,82 @@ class ShopInterface(commands.Cog):
             
             role_obj = interaction.guild.get_role(role_id)
             if not role_obj:
-                return await interaction.response.send_message("⚠️ Role này không còn tồn tại trên server. Vui lòng liên hệ Admin.", ephemeral=True)
+                return await interaction.followup.send("⚠️ Role này không còn tồn tại trên server. Vui lòng liên hệ Admin.", ephemeral=True)
 
             user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
             
             if role_obj in interaction.user.roles:
-                return await interaction.response.send_message(f"Bạn đã sở hữu role {role_obj.mention} rồi!", ephemeral=True)
+                return await interaction.followup.send(f"Bạn đã sở hữu role {role_obj.mention} rồi!", ephemeral=True)
 
             if user_data['balance'] < price:
-                return await interaction.response.send_message(f"Bạn không đủ coin! Cần **{price} coin** nhưng bạn chỉ có **{user_data['balance']}**.", ephemeral=True)
+                return await interaction.followup.send(f"Bạn không đủ coin! Cần **{price} coin** nhưng bạn chỉ có **{user_data['balance']}**.", ephemeral=True)
                 
             new_balance = user_data['balance'] - price
-            db.update_user_data(interaction.user.id, interaction.guild.id, balance=new_balance)
             
             try:
                 await interaction.user.add_roles(role_obj, reason="Mua từ shop")
-                await interaction.response.send_message(f"🎉 Chúc mừng! Bạn đã mua thành công role {role_obj.mention} với giá **{price} coin**.", ephemeral=True)
+                db.update_user_data(interaction.user.id, interaction.guild.id, balance=new_balance)
             except discord.Forbidden:
-                # hoan lai tien neu co loi
-                db.update_user_data(interaction.user.id, interaction.guild.id, balance=user_data['balance'])
-                await interaction.response.send_message("❌ Đã xảy ra lỗi! Tôi không có quyền để gán role này cho bạn. Giao dịch đã được hoàn lại.", ephemeral=True)
+                return await interaction.followup.send("❌ Đã xảy ra lỗi! Tôi không có quyền để gán role này cho bạn. Giao dịch đã bị hủy.", ephemeral=True)
+            
+            receipt_embed = discord.Embed(
+                title="Biên Lai Giao Dịch Mua Hàng",
+                description="Giao dịch của bạn đã được xử lý thành công.",
+                color=self.embed_color,
+                timestamp=discord.utils.utcnow()
+            )
+            receipt_embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+            if interaction.guild.icon:
+                receipt_embed.set_thumbnail(url=interaction.guild.icon.url)
+            
+            receipt_embed.add_field(name="Loại Giao Dịch", value="```Mua Role```", inline=False)
+            receipt_embed.add_field(name="Sản Phẩm", value=f"```{role_obj.name}```", inline=True)
+            receipt_embed.add_field(name="Chi Phí", value=f"```- {price} coin```", inline=True)
+            receipt_embed.add_field(name="Số Dư Mới", value=f"```{new_balance} coin```", inline=True)
+            
+            if self.config.get('SHOP_EMBED_IMAGE_URL'):
+                receipt_embed.set_image(url=self.config.get('SHOP_EMBED_IMAGE_URL'))
+
+            receipt_embed.set_footer(text=f"Cảm ơn bạn đã giao dịch tại {interaction.guild.name}", icon_url=self.bot.user.avatar.url)
+
+            try:
+                await interaction.user.send(embed=receipt_embed)
+                await interaction.followup.send("✅ Giao dịch thành công! Vui lòng kiểm tra tin nhắn riêng để xem biên lai.", ephemeral=True)
+            except discord.Forbidden:
+                await interaction.followup.send(
+                    "⚠️ Tôi không thể gửi biên lai vào tin nhắn riêng của bạn. Giao dịch vẫn thành công. Đây là biên lai của bạn:", 
+                    embed=receipt_embed, 
+                    ephemeral=True
+                )
+
 
     # modal ban role
     class SellModal(Modal, title="Bán Lại Role"):
         def __init__(self, bot: commands.Bot):
             super().__init__()
             self.bot = bot
-            self.add_item(TextInput(label="Số thứ tự của role muốn bán", placeholder="Nhập số tương ứng với role bạn muốn bán..."))
+            self.config = bot.config
+            self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
+            self.add_item(TextInput(
+                label="Số thứ tự của role muốn bán", 
+                placeholder="Nhập số tương ứng với role bạn muốn bán...",
+                custom_id="sell_role_id_input"
+            ))
+
 
         async def on_submit(self, interaction: discord.Interaction):
+            await interaction.response.defer(ephemeral=True, thinking=True)
+
             try:
                 role_number_input = int(self.children[0].value)
                 if role_number_input <= 0:
                     raise ValueError
             except (ValueError, TypeError):
-                return await interaction.response.send_message("⚠️ Vui lòng nhập một số thứ tự hợp lệ.", ephemeral=True)
+                return await interaction.followup.send("⚠️ Vui lòng nhập một số thứ tự hợp lệ.", ephemeral=True)
 
             shop_roles = db.get_shop_roles(interaction.guild.id)
             if not shop_roles or role_number_input > len(shop_roles):
-                return await interaction.response.send_message("⚠️ Số thứ tự này không tồn tại trong shop.", ephemeral=True)
+                return await interaction.followup.send("⚠️ Số thứ tự này không tồn tại trong shop.", ephemeral=True)
 
             selected_role_data = shop_roles[role_number_input - 1]
             role_id = selected_role_data['role_id']
@@ -81,27 +202,51 @@ class ShopInterface(commands.Cog):
 
             role_obj = interaction.guild.get_role(role_id)
             if not role_obj:
-                return await interaction.response.send_message("⚠️ Role này không còn tồn tại trên server. Vui lòng liên hệ Admin.", ephemeral=True)
+                return await interaction.followup.send("⚠️ Role này không còn tồn tại trên server. Vui lòng liên hệ Admin.", ephemeral=True)
 
-            # ktra user co role khong
             if role_obj not in interaction.user.roles:
-                return await interaction.response.send_message(f"Bạn không sở hữu role {role_obj.mention} để bán.", ephemeral=True)
+                return await interaction.followup.send(f"Bạn không sở hữu role {role_obj.mention} để bán.", ephemeral=True)
             
             user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
             
-            # tinh toan gia ban lai
             refund_amount = int(price * 0.65)
             new_balance = user_data['balance'] + refund_amount
 
-            db.update_user_data(interaction.user.id, interaction.guild.id, balance=new_balance)
-
             try:
                 await interaction.user.remove_roles(role_obj, reason="Bán lại cho shop")
-                await interaction.response.send_message(f"✅ Bạn đã bán thành công role {role_obj.mention} và nhận lại **{refund_amount} coin**.", ephemeral=True)
+                db.update_user_data(interaction.user.id, interaction.guild.id, balance=new_balance)
             except discord.Forbidden:
-                # hoan lai giao dich neu co loi
-                db.update_user_data(interaction.user.id, interaction.guild.id, balance=user_data['balance'])
-                await interaction.response.send_message("❌ Đã xảy ra lỗi! Tôi không có quyền để xóa role này khỏi bạn. Giao dịch đã được hủy.", ephemeral=True)
+                return await interaction.followup.send("❌ Đã xảy ra lỗi! Tôi không có quyền để xóa role này khỏi bạn. Giao dịch đã bị hủy.", ephemeral=True)
+
+            receipt_embed = discord.Embed(
+                title="Biên Lai Giao Dịch Bán Hàng",
+                description="Giao dịch của bạn đã được xử lý thành công.",
+                color=self.embed_color,
+                timestamp=discord.utils.utcnow()
+            )
+            receipt_embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+            if interaction.guild.icon:
+                receipt_embed.set_thumbnail(url=interaction.guild.icon.url)
+            
+            receipt_embed.add_field(name="Loại Giao Dịch", value="```Bán Role```", inline=False)
+            receipt_embed.add_field(name="Sản Phẩm", value=f"```{role_obj.name}```", inline=True)
+            receipt_embed.add_field(name="Tiền Nhận Lại", value=f"```+ {refund_amount} coin```", inline=True)
+            receipt_embed.add_field(name="Số Dư Mới", value=f"```{new_balance} coin```", inline=True)
+            
+            if self.config.get('SHOP_EMBED_IMAGE_URL'):
+                receipt_embed.set_image(url=self.config.get('SHOP_EMBED_IMAGE_URL'))
+
+            receipt_embed.set_footer(text=f"Cảm ơn bạn đã giao dịch tại {interaction.guild.name}", icon_url=self.bot.user.avatar.url)
+
+            try:
+                await interaction.user.send(embed=receipt_embed)
+                await interaction.followup.send("✅ Giao dịch thành công! Vui lòng kiểm tra tin nhắn riêng để xem biên lai.", ephemeral=True)
+            except discord.Forbidden:
+                await interaction.followup.send(
+                    "⚠️ Tôi không thể gửi biên lai vào tin nhắn riêng của bạn. Giao dịch vẫn thành công. Đây là biên lai của bạn:", 
+                    embed=receipt_embed, 
+                    ephemeral=True
+                )
 
 
     class ShopView(View):
@@ -117,87 +262,31 @@ class ShopInterface(commands.Cog):
             await interaction.response.defer(ephemeral=True)
             
             user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
-            guild = interaction.guild
 
-            # embed 1
-            embed1 = discord.Embed(
+            # Chi gui embed thong tin tai khoan
+            embed = discord.Embed(
                 title=self.messages['ACCOUNT_INFO_TITLE'],
                 description=self.messages['ACCOUNT_INFO_DESC'],
                 color=self.embed_color
             )
-            embed1.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
-            embed1.set_thumbnail(url=interaction.user.display_avatar.url)
+            embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+            embed.set_thumbnail(url=interaction.user.display_avatar.url)
             balance_str = self.messages['BALANCE_FIELD_VALUE'].format(balance=user_data['balance'])
-            embed1.add_field(name=f"```{self.messages['BALANCE_FIELD_NAME']}```", value=balance_str, inline=False)
+            embed.add_field(name=f"```{self.messages['BALANCE_FIELD_NAME']}```", value=balance_str, inline=False)
             if self.config.get('SHOP_EMBED_IMAGE_URL'):
-                embed1.set_image(url=self.config['SHOP_EMBED_IMAGE_URL'])
+                embed.set_image(url=self.config['SHOP_EMBED_IMAGE_URL'])
 
-            footer_text1 = self.config['FOOTER_MESSAGES']['ACCOUNT_INFO']
-            embed1.set_footer(
-                text=f"────────────────────\n{footer_text1}",
+            footer_text = self.config['FOOTER_MESSAGES']['ACCOUNT_INFO']
+            embed.set_footer(
+                text=f"────────────────────\n{footer_text}",
                 icon_url=self.bot.user.avatar.url
             )
-
-            # embed 2
-            embed2 = discord.Embed(
-                title=self.messages['EARNING_RATES_TITLE'],
-                description=self.messages['EARNING_RATES_DESC'],
-                color=self.embed_color
-            )
             
-            if guild.icon:
-                embed2.set_author(name=guild.name, icon_url=guild.icon.url)
-                embed2.set_thumbnail(url=guild.icon.url)
-            else:
-                embed2.set_author(name=guild.name)
-
-            # them anh to neu co
-            if self.config.get('EARNING_RATES_IMAGE_URL'):
-                embed2.set_image(url=self.config.get('EARNING_RATES_IMAGE_URL'))
-
-            special_rates_list = []
-            categories_config = self.config['CURRENCY_RATES'].get('categories', {})
-            if categories_config:
-                for cat_id, rates in categories_config.items():
-                    category = guild.get_channel(int(cat_id))
-                    if category:
-                        special_rates_list.append(f"**<:g_chamhoi:1326543673957027961> Danh mục: {category.name}**")
-                        msg_rate = rates.get('MESSAGES_PER_COIN')
-                        react_rate = rates.get('REACTIONS_PER_COIN')
-                        if msg_rate:
-                            special_rates_list.append(f"> <a:timchat:1406136711741706301> `{msg_rate}` tin nhắn = `1` <a:coin:1406137409384480850>")
-                        if react_rate:
-                            special_rates_list.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
-                        special_rates_list.append("") 
-
-            channels_config = self.config['CURRENCY_RATES'].get('channels', {})
-            if channels_config:
-                for chan_id, rates in channels_config.items():
-                    channel = guild.get_channel(int(chan_id))
-                    if channel:
-                        special_rates_list.append(f"**<:channel:1406136670709092422> Kênh: {channel.mention}**")
-                        msg_rate = rates.get('MESSAGES_PER_COIN')
-                        react_rate = rates.get('REACTIONS_PER_COIN')
-                        if msg_rate:
-                            special_rates_list.append(f"> <a:timchat:1406136711741706301> `{msg_rate}` tin nhắn = `1` <a:coin:1406137409384480850>")
-                        if react_rate:
-                            special_rates_list.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
-                        special_rates_list.append("") 
-            
-            if special_rates_list:
-                if special_rates_list[-1] == "":
-                    special_rates_list.pop()
-                special_rates_desc = "\n".join(special_rates_list)
-                embed2.description += "\n\n" + special_rates_desc
-            
-            footer_text2 = self.config['FOOTER_MESSAGES']['EARNING_RATES']
-            embed2.set_footer(
-                text=f"────────────────────\n{footer_text2}",
-                icon_url=self.bot.user.avatar.url
-            )
+            # Tao view co nut 'Cach dao coin'
+            view = EarningRatesView(bot=self.bot)
             
             try:
-                await interaction.user.send(embeds=[embed1, embed2])
+                await interaction.user.send(embed=embed, view=view)
                 await interaction.followup.send("✅ Đã gửi thông tin tài khoản vào tin nhắn riêng của bạn!", ephemeral=True)
             except discord.Forbidden:
                 await interaction.followup.send("⚠️ Tôi không thể gửi tin nhắn riêng cho bạn. Vui lòng bật tin nhắn từ thành viên server.", ephemeral=True)
