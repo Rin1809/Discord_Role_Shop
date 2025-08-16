@@ -110,13 +110,13 @@ class ShopInterface(commands.Cog):
                 for cat_id, rates in categories_config.items():
                     category = guild.get_channel(int(cat_id))
                     if category:
-                        special_rates_list.append(f"**📁 Danh mục: {category.name}**")
+                        special_rates_list.append(f"**<:g_chamhoi:1326543673957027961> Danh mục: {category.name}**")
                         msg_rate = rates.get('MESSAGES_PER_COIN')
                         react_rate = rates.get('REACTIONS_PER_COIN')
                         if msg_rate:
-                            special_rates_list.append(f"> 💬 `{msg_rate}` tin nhắn = `1` coin")
+                            special_rates_list.append(f"> <a:timchat:1406136711741706301> `{msg_rate}` tin nhắn = `1` <a:coin:1406137409384480850>")
                         if react_rate:
-                            special_rates_list.append(f"> 💖 `{react_rate}` reactions = `1` coin")
+                            special_rates_list.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
                         special_rates_list.append("") 
 
             # Xu ly channels
@@ -125,13 +125,13 @@ class ShopInterface(commands.Cog):
                 for chan_id, rates in channels_config.items():
                     channel = guild.get_channel(int(chan_id))
                     if channel:
-                        special_rates_list.append(f"**#️⃣ Kênh: {channel.mention}**")
+                        special_rates_list.append(f"**<:channel:1406136670709092422> Kênh: {channel.mention}**")
                         msg_rate = rates.get('MESSAGES_PER_COIN')
                         react_rate = rates.get('REACTIONS_PER_COIN')
                         if msg_rate:
-                            special_rates_list.append(f"> 💬 `{msg_rate}` tin nhắn = `1` coin")
+                            special_rates_list.append(f"> <a:timchat:1406136711741706301> `{msg_rate}` tin nhắn = `1` <a:coin:1406137409384480850>")
                         if react_rate:
-                            special_rates_list.append(f"> 💖 `{react_rate}` reactions = `1` coin")
+                            special_rates_list.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
                         special_rates_list.append("") 
             
             if special_rates_list:
