@@ -83,6 +83,12 @@ class ShopInterface(commands.Cog):
             if self.config.get('SHOP_EMBED_IMAGE_URL'):
                 embed1.set_image(url=self.config['SHOP_EMBED_IMAGE_URL'])
 
+            footer_text1 = self.config['FOOTER_MESSAGES']['ACCOUNT_INFO']
+            embed1.set_footer(
+                text=f"────────────────────\n{footer_text1}",
+                icon_url=self.bot.user.avatar.url
+            )
+
             # Embed 2: bang rate
             embed2 = discord.Embed(
                 title=self.messages['EARNING_RATES_TITLE'],
@@ -90,6 +96,13 @@ class ShopInterface(commands.Cog):
                 color=self.embed_color
             )
             
+            # them author va thumbnail server
+            if guild.icon:
+                embed2.set_author(name=guild.name, icon_url=guild.icon.url)
+                embed2.set_thumbnail(url=guild.icon.url)
+            else:
+                embed2.set_author(name=guild.name)
+
             special_rates_list = []
             # Xu ly categories
             categories_config = self.config['CURRENCY_RATES'].get('categories', {})
@@ -121,15 +134,19 @@ class ShopInterface(commands.Cog):
                             special_rates_list.append(f"> 💖 `{react_rate}` reactions = `1` coin")
                         special_rates_list.append("") 
             
-            # Neu co rate dac biet thi moi them field
             if special_rates_list:
                 if special_rates_list[-1] == "":
                     special_rates_list.pop()
                 special_rates_desc = "\n".join(special_rates_list)
                 embed2.description += "\n\n" + special_rates_desc
             
+            footer_text2 = self.config['FOOTER_MESSAGES']['EARNING_RATES']
+            embed2.set_footer(
+                text=f"────────────────────\n{footer_text2}",
+                icon_url=self.bot.user.avatar.url
+            )
+            
             try:
-                # Gui 2 embeds
                 await interaction.user.send(embeds=[embed1, embed2])
                 await interaction.followup.send("✅ Đã gửi thông tin tài khoản vào tin nhắn riêng của bạn!", ephemeral=True)
             except discord.Forbidden:
@@ -155,6 +172,12 @@ class ShopInterface(commands.Cog):
                         role_list_str += f"### {i+1}. {role.mention}\n> **Giá:** `{role_data['price']}` 🪙\n"
                 embed.description = self.messages['SHOP_ROLES_DESC'] + "\n\n" + role_list_str
             
+            footer_text = self.config['FOOTER_MESSAGES']['ROLE_LIST']
+            embed.set_footer(
+                text=f"────────────────────\n{footer_text}",
+                icon_url=self.bot.user.avatar.url
+            )
+
             await interaction.followup.send(embed=embed, ephemeral=True)
 
         @discord.ui.button(label="Mua Role", style=discord.ButtonStyle.secondary, custom_id="shop_view:purchase")

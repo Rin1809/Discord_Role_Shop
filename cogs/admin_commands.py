@@ -7,7 +7,6 @@ class AdminCommands(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.config = bot.config
-        # mau embed chinh
         self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
 
     shop = app_commands.Group(name="shop", description="Các lệnh quản lý shop role")
@@ -28,6 +27,13 @@ class AdminCommands(commands.Cog):
             title=self.config['MESSAGES']['SHOP_EMBED_TITLE'],
             description=self.config['MESSAGES']['SHOP_EMBED_DESCRIPTION'],
             color=self.embed_color
+        )
+        
+        # them footer co ngan cach
+        footer_text = self.config['FOOTER_MESSAGES']['SHOP_PANEL']
+        embed.set_footer(
+            text=f"────────────────────\n{footer_text}", 
+            icon_url=self.bot.user.avatar.url
         )
         
         if self.config.get('SHOP_EMBED_IMAGE_URL'):
