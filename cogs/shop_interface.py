@@ -10,6 +10,7 @@ class ShopInterface(commands.Cog):
         self.messages = self.config['MESSAGES']
         self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
 
+    # modal mua role
     class PurchaseModal(Modal, title="Mua Role"):
         def __init__(self, bot: commands.Bot):
             super().__init__()
@@ -51,8 +52,56 @@ class ShopInterface(commands.Cog):
                 await interaction.user.add_roles(role_obj, reason="Mua từ shop")
                 await interaction.response.send_message(f"🎉 Chúc mừng! Bạn đã mua thành công role {role_obj.mention} với giá **{price} coin**.", ephemeral=True)
             except discord.Forbidden:
+                # hoan lai tien neu co loi
                 db.update_user_data(interaction.user.id, interaction.guild.id, balance=user_data['balance'])
                 await interaction.response.send_message("❌ Đã xảy ra lỗi! Tôi không có quyền để gán role này cho bạn. Giao dịch đã được hoàn lại.", ephemeral=True)
+
+    # modal ban role
+    class SellModal(Modal, title="Bán Lại Role"):
+        def __init__(self, bot: commands.Bot):
+            super().__init__()
+            self.bot = bot
+            self.add_item(TextInput(label="Số thứ tự của role muốn bán", placeholder="Nhập số tương ứng với role bạn muốn bán..."))
+
+        async def on_submit(self, interaction: discord.Interaction):
+            try:
+                role_number_input = int(self.children[0].value)
+                if role_number_input <= 0:
+                    raise ValueError
+            except (ValueError, TypeError):
+                return await interaction.response.send_message("⚠️ Vui lòng nhập một số thứ tự hợp lệ.", ephemeral=True)
+
+            shop_roles = db.get_shop_roles(interaction.guild.id)
+            if not shop_roles or role_number_input > len(shop_roles):
+                return await interaction.response.send_message("⚠️ Số thứ tự này không tồn tại trong shop.", ephemeral=True)
+
+            selected_role_data = shop_roles[role_number_input - 1]
+            role_id = selected_role_data['role_id']
+            price = selected_role_data['price']
+
+            role_obj = interaction.guild.get_role(role_id)
+            if not role_obj:
+                return await interaction.response.send_message("⚠️ Role này không còn tồn tại trên server. Vui lòng liên hệ Admin.", ephemeral=True)
+
+            # ktra user co role khong
+            if role_obj not in interaction.user.roles:
+                return await interaction.response.send_message(f"Bạn không sở hữu role {role_obj.mention} để bán.", ephemeral=True)
+            
+            user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
+            
+            # tinh toan gia ban lai
+            refund_amount = int(price * 0.65)
+            new_balance = user_data['balance'] + refund_amount
+
+            db.update_user_data(interaction.user.id, interaction.guild.id, balance=new_balance)
+
+            try:
+                await interaction.user.remove_roles(role_obj, reason="Bán lại cho shop")
+                await interaction.response.send_message(f"✅ Bạn đã bán thành công role {role_obj.mention} và nhận lại **{refund_amount} coin**.", ephemeral=True)
+            except discord.Forbidden:
+                # hoan lai giao dich neu co loi
+                db.update_user_data(interaction.user.id, interaction.guild.id, balance=user_data['balance'])
+                await interaction.response.send_message("❌ Đã xảy ra lỗi! Tôi không có quyền để xóa role này khỏi bạn. Giao dịch đã được hủy.", ephemeral=True)
 
 
     class ShopView(View):
@@ -63,7 +112,7 @@ class ShopInterface(commands.Cog):
             self.messages = self.config['MESSAGES']
             self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
         
-        @discord.ui.button(label="Tài Khoản", style=discord.ButtonStyle.danger, custom_id="shop_view:account")
+        @discord.ui.button(label="Tài Khoản", style=discord.ButtonStyle.secondary, custom_id="shop_view:account")
         async def account_button_callback(self, interaction: discord.Interaction, button: Button):
             await interaction.response.defer(ephemeral=True)
             
@@ -185,6 +234,12 @@ class ShopInterface(commands.Cog):
         async def purchase_button_callback(self, interaction: discord.Interaction, button: Button):
             modal = ShopInterface.PurchaseModal(bot=self.bot)
             await interaction.response.send_modal(modal)
+
+        @discord.ui.button(label="Bán Role", style=discord.ButtonStyle.secondary, custom_id="shop_view:sell")
+        async def sell_button_callback(self, interaction: discord.Interaction, button: Button):
+            modal = ShopInterface.SellModal(bot=self.bot)
+            await interaction.response.send_modal(modal)
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(ShopInterface(bot))
