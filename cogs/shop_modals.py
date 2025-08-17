@@ -3,7 +3,7 @@ from discord.ui import Modal, TextInput
 from database import database as db
 import re
 
-# Ham kiem tra ma mau hex
+# ham check hex
 def is_valid_hex_color(s):
     return re.match(r'^#?([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$', s) is not None
 
@@ -200,7 +200,6 @@ class CustomRoleModal(Modal):
         color_int = int(role_color_str.lstrip('#'), 16)
         new_color = discord.Color(color_int)
         
-        # Lay guild_id tu config vi tuong tac nay co the xay ra trong DM
         guild_id = self.config['GUILD_ID']
         guild = self.bot.get_guild(guild_id)
         if not guild:
@@ -208,13 +207,14 @@ class CustomRoleModal(Modal):
 
         user_data = db.get_or_create_user(interaction.user.id, guild_id)
 
-        # Xu ly sua role
+        # xu ly sua role
         if self.role_to_edit:
             try:
                 await self.role_to_edit.edit(name=role_name, color=new_color, reason=f"Người dùng {interaction.user} tự sửa")
                 db.add_or_update_custom_role(interaction.user.id, guild_id, self.role_to_edit.id, role_name, role_color_str)
                 
-                success_msg = f"✅ Đã cập nhật thành công role {self.role_to_edit.mention} của bạn."
+                # fix loi @unknown-role khi gui dm
+                success_msg = f"✅ Đã cập nhật thành công role **{role_name}** của bạn."
                 try:
                     await interaction.user.send(success_msg)
                     await interaction.followup.send("✅ Đã xử lý! Vui lòng kiểm tra tin nhắn riêng.", ephemeral=True)
@@ -225,14 +225,13 @@ class CustomRoleModal(Modal):
                 await interaction.followup.send("❌ Tôi không có quyền để chỉnh sửa role này.", ephemeral=True)
             return
 
-        # Xu ly tao role moi
+        # xu ly tao role moi
         if user_data['balance'] < self.price:
             return await interaction.followup.send(f"Bạn không đủ coin! Cần **{self.price} coin** nhưng bạn chỉ có **{user_data['balance']}**.", ephemeral=True)
         
         new_balance = user_data['balance'] - self.price
 
         try:
-            # Lay member object de them role
             member = guild.get_member(interaction.user.id)
             if not member:
                  return await interaction.followup.send("Lỗi: Không tìm thấy bạn trên server.", ephemeral=True)
@@ -245,12 +244,37 @@ class CustomRoleModal(Modal):
             db.update_user_data(interaction.user.id, guild_id, balance=new_balance)
             db.add_or_update_custom_role(interaction.user.id, guild_id, new_role.id, role_name, role_color_str)
             
-            success_msg = f"<a:HanaCheer2:1388162123774820362> Chúc mừng! Bạn đã tạo thành công role {new_role.mention}."
+            # tao bien lai
+            receipt_embed = discord.Embed(
+                title="Biên Lai Tạo Role Tùy Chỉnh",
+                description="Role tùy chỉnh của bạn đã được tạo và gán thành công.",
+                color=self.embed_color,
+                timestamp=discord.utils.utcnow()
+            )
+            receipt_embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+            if interaction.guild.icon:
+                receipt_embed.set_thumbnail(url=interaction.guild.icon.url)
+            
+            receipt_embed.add_field(name="Loại Giao Dịch", value="```Tạo Role Tùy Chỉnh```", inline=False)
+            receipt_embed.add_field(name="Tên Role", value=f"```{role_name}```", inline=True)
+            receipt_embed.add_field(name="Màu Sắc", value=f"```{role_color_str}```", inline=True)
+            receipt_embed.add_field(name="Chi Phí", value=f"```- {self.price} coin```", inline=False)
+            receipt_embed.add_field(name="Số Dư Mới", value=f"```{new_balance} coin```", inline=True)
+            
+            if self.config.get('SHOP_EMBED_IMAGE_URL'):
+                receipt_embed.set_image(url=self.config.get('SHOP_EMBED_IMAGE_URL'))
+
+            receipt_embed.set_footer(text=f"Cảm ơn bạn đã giao dịch tại {interaction.guild.name}", icon_url=self.bot.user.avatar.url)
+
             try:
-                await interaction.user.send(success_msg)
-                await interaction.followup.send("✅ Giao dịch thành công! Vui lòng kiểm tra tin nhắn riêng.", ephemeral=True)
+                await interaction.user.send(embed=receipt_embed)
+                await interaction.followup.send("✅ Giao dịch thành công! Vui lòng kiểm tra tin nhắn riêng để xem biên lai.", ephemeral=True)
             except discord.Forbidden:
-                await interaction.followup.send(success_msg, ephemeral=True)
+                 await interaction.followup.send(
+                    "<a:c_947079524435247135:1274398161200484446> Tôi không thể gửi biên lai vào DM. Giao dịch vẫn thành công. Đây là biên lai của bạn:", 
+                    embed=receipt_embed, 
+                    ephemeral=True
+                )
 
         except discord.Forbidden:
             await interaction.followup.send("❌ Đã xảy ra lỗi! Tôi không có quyền tạo hoặc gán role. Giao dịch đã bị hủy.", ephemeral=True)

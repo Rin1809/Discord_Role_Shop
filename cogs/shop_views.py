@@ -71,6 +71,7 @@ class ManageCustomRoleView(View):
             db.delete_custom_role_data(interaction.user.id, guild_id)
             await interaction.followup.send("✅ Đã xóa thành công role tùy chỉnh của bạn.", ephemeral=True)
             
+            # vo hieu hoa nut
             for item in self.children:
                 item.disabled = True
             await interaction.edit_original_response(view=self)
@@ -197,7 +198,16 @@ class EarningRatesView(View):
             return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Role tùy chỉnh của bạn không còn tồn tại trên server. Dữ liệu đã được xóa.", ephemeral=True)
 
         view = ManageCustomRoleView(bot=self.bot, role_to_edit=role_obj)
-        await interaction.followup.send(self.config['MESSAGES']['CUSTOM_ROLE_MANAGE_PROMPT'], view=view, ephemeral=True)
+        
+        # them anh vao embed
+        embed = discord.Embed(
+            description=self.config['MESSAGES']['CUSTOM_ROLE_MANAGE_PROMPT'],
+            color=self.embed_color
+        )
+        if self.config.get('EARNING_RATES_IMAGE_URL'):
+            embed.set_image(url=self.config.get('EARNING_RATES_IMAGE_URL'))
+            
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 
 class ShopActionSelect(Select):
@@ -251,7 +261,6 @@ class ShopActionSelect(Select):
             
             is_test_user = (interaction.user.id == 873576591693873252)
             
-            # Kiem tra boost
             if not is_test_user: 
                 boost_count = 0
                 if interaction.user.premium_since:
@@ -269,7 +278,6 @@ class ShopActionSelect(Select):
                         await interaction.response.send_message("<a:c_947079524435247135:1274398161200484446> Yêu cầu không hợp lệ. Vui lòng kiểm tra tin nhắn riêng.", ephemeral=True)
                     return
 
-            # Kiem tra da so huu role chua
             if db.get_custom_role(interaction.user.id, interaction.guild.id):
                 msg = self.config['MESSAGES']['CUSTOM_ROLE_ALREADY_OWNED']
                 dm_failed = False
@@ -283,7 +291,6 @@ class ShopActionSelect(Select):
                     await interaction.response.send_message("<a:c_947079524435247135:1274398161200484446> Yêu cầu đã được xử lý. Vui lòng kiểm tra tin nhắn riêng.", ephemeral=True)
                 return
 
-            # Kiem tra so du coin
             price = custom_role_config.get('PRICE', 1000)
             user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
             if user_data['balance'] < price:
@@ -299,7 +306,6 @@ class ShopActionSelect(Select):
                     await interaction.response.send_message("<a:c_947079524435247135:1274398161200484446> Yêu cầu không hợp lệ. Vui lòng kiểm tra tin nhắn riêng.", ephemeral=True)
                 return
             
-            # Neu tat ca hop le, gui modal
             await interaction.response.send_modal(CustomRoleModal(bot=self.bot, price=price))
 
 class ShopView(View):
