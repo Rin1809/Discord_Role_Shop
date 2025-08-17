@@ -1,8 +1,55 @@
 import discord
 from discord.ext import commands
-from discord.ui import Button, View, Modal, TextInput 
+from discord.ui import Button, View, Modal, TextInput, Select
 from database import database as db
 
+# --- UI moi cho Q&A ---
+class QnASelect(Select):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+        self.config = bot.config
+        self.qna_data = self.config.get("QNA_DATA", [])
+        self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
+
+        options = [
+            discord.SelectOption(
+                label=item["label"],
+                description=item.get("description"),
+                emoji=item.get("emoji")
+            ) for item in self.qna_data
+        ]
+        
+        super().__init__(placeholder="Chọn một câu hỏi để xem câu trả lời...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        selected_label = self.values[0]
+        
+        answer_data = next((item for item in self.qna_data if item["label"] == selected_label), None)
+
+        if not answer_data:
+            return await interaction.followup.send("⚠️ Lỗi: Không tìm thấy câu trả lời cho câu hỏi này.", ephemeral=True)
+        
+        # lay guild tu config thay vi interaction
+        guild = self.bot.get_guild(self.config['GUILD_ID'])
+        if not guild:
+            return await interaction.followup.send("⚠️ Lỗi nghiêm trọng: Không thể tìm thấy server được cấu hình.", ephemeral=True)
+            
+        embed = discord.Embed(
+            title=f"{answer_data.get('emoji', '❓')} {answer_data.get('answer_title', selected_label)}",
+            description=answer_data.get("answer_description", "Chưa có câu trả lời."),
+            color=self.embed_color
+        )
+        embed.set_footer(text=guild.name, icon_url=guild.icon.url if guild.icon else None)
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+class QnAView(View):
+    def __init__(self, bot: commands.Bot):
+        super().__init__(timeout=180) 
+        self.add_item(QnASelect(bot))
+
+# --- View cho DM ---
 class EarningRatesView(View):
     def __init__(self, bot: commands.Bot):
         super().__init__(timeout=None)
@@ -11,7 +58,16 @@ class EarningRatesView(View):
         self.messages = self.config['MESSAGES']
         self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
 
-    @discord.ui.button(label="Cách Đào Coin", style=discord.ButtonStyle.success, emoji="💰")
+    @discord.ui.button(label="?", style=discord.ButtonStyle.secondary)
+    async def bot_info_callback(self, interaction: discord.Interaction, button: Button):
+        qna_view = QnAView(bot=self.bot)
+        await interaction.response.send_message(
+            content="<:g_chamhoi:1326543673957027961> **Các câu hỏi thường gặp**\nVui lòng chọn một câu hỏi từ menu bên dưới:", 
+            view=qna_view, 
+            ephemeral=True
+        )
+
+    @discord.ui.button(label="Cách Đào Coin", style=discord.ButtonStyle.secondary, emoji="💰")
     async def show_rates_callback(self, interaction: discord.Interaction, button: Button):
         await interaction.response.defer(ephemeral=True)
         guild = self.bot.get_guild(self.config['GUILD_ID'])
@@ -176,7 +232,6 @@ class ShopInterface(commands.Cog):
                 custom_id="sell_role_id_input"
             ))
 
-
         async def on_submit(self, interaction: discord.Interaction):
             await interaction.response.defer(ephemeral=True, thinking=True)
 
@@ -204,8 +259,7 @@ class ShopInterface(commands.Cog):
             
             user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
             
-            # tinh tien hoan tra
-            refund_percentage = self.config.get('SELL_REFUND_PERCENTAGE', 0.65) # mac dinh 65%
+            refund_percentage = self.config.get('SELL_REFUND_PERCENTAGE', 0.65)
             refund_amount = int(price * refund_percentage)
             new_balance = user_data['balance'] + refund_amount
 
@@ -244,7 +298,6 @@ class ShopInterface(commands.Cog):
                     embed=receipt_embed, 
                     ephemeral=True
                 )
-
 
     class ShopView(View):
         def __init__(self, bot: commands.Bot): 
