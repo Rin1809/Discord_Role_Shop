@@ -3,7 +3,6 @@ from discord.ext import commands
 from discord.ui import Button, View, Modal, TextInput 
 from database import database as db
 
-# View moi cho nut 'Cach dao coins'
 class EarningRatesView(View):
     def __init__(self, bot: commands.Bot):
         super().__init__(timeout=None)
@@ -19,7 +18,6 @@ class EarningRatesView(View):
         if not guild:
             return await interaction.followup.send("Lỗi: Không tìm thấy server.", ephemeral=True)
             
-        # Logic xay dung embed ty le dao coin
         embed = discord.Embed(
             title=self.messages['EARNING_RATES_TITLE'],
             description=self.messages['EARNING_RATES_DESC'],
@@ -86,7 +84,6 @@ class ShopInterface(commands.Cog):
         self.messages = self.config['MESSAGES']
         self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
 
-    # modal mua role
     class PurchaseModal(Modal, title="Mua Role"):
         def __init__(self, bot: commands.Bot):
             super().__init__()
@@ -167,8 +164,6 @@ class ShopInterface(commands.Cog):
                     ephemeral=True
                 )
 
-
-    # modal ban role
     class SellModal(Modal, title="Bán Lại Role"):
         def __init__(self, bot: commands.Bot):
             super().__init__()
@@ -209,7 +204,9 @@ class ShopInterface(commands.Cog):
             
             user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
             
-            refund_amount = int(price * 0.65)
+            # tinh tien hoan tra
+            refund_percentage = self.config.get('SELL_REFUND_PERCENTAGE', 0.65) # mac dinh 65%
+            refund_amount = int(price * refund_percentage)
             new_balance = user_data['balance'] + refund_amount
 
             try:
@@ -263,7 +260,6 @@ class ShopInterface(commands.Cog):
             
             user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
 
-            # Chi gui embed thong tin tai khoan
             embed = discord.Embed(
                 title=self.messages['ACCOUNT_INFO_TITLE'],
                 description=self.messages['ACCOUNT_INFO_DESC'],
@@ -282,7 +278,6 @@ class ShopInterface(commands.Cog):
                 icon_url=self.bot.user.avatar.url
             )
             
-            # Tao view co nut 'Cach dao coin'
             view = EarningRatesView(bot=self.bot)
             
             try:

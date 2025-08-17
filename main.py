@@ -1,6 +1,6 @@
 # main.py
 import discord
-from discord.ext import commands # THAY ĐỔI: Import commands
+from discord.ext import commands
 import json
 import os
 import logging
@@ -22,16 +22,15 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 intents.reactions = True
+intents.guilds = True # can thiet cho on_guild_join
 
 class ShopBot(commands.Bot):
     def __init__(self):
-        # command_prefix là bắt buộc, nhưng không dùng nên có thể đặt bất kỳ
         super().__init__(command_prefix="!@#$", intents=intents) 
         self.config = config
         self.persistent_views_added = False
 
     async def setup_hook(self):
-        # Tải cogs
         for filename in os.listdir('./cogs'):
             if filename.endswith('.py'):
                 try:
@@ -40,7 +39,6 @@ class ShopBot(commands.Bot):
                 except Exception as e:
                     logging.error(f"Failed to load cog {filename}: {e}")
 
-        # Thêm View vào bot để nó tồn tại sau khi khởi động lại
         if not self.persistent_views_added:
             shop_cog = self.get_cog("ShopInterface")
             if shop_cog:
@@ -61,13 +59,31 @@ class ShopBot(commands.Bot):
     async def on_guild_join(self, guild):
         if guild.id != self.config['GUILD_ID']:
             logging.warning(f"Bot was added to an unauthorized guild: {guild.name} ({guild.id}). Leaving.")
+            
+            inviter = None
+            # tim ng moi bot qua audit log
             try:
-                await guild.owner.send(
+                async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.bot_add):
+                    if entry.target.id == self.user.id:
+                        inviter = entry.user
+                        break
+            except discord.Forbidden:
+                logging.warning(f"Missing 'View Audit Log' permission in {guild.name} to find inviter.")
+                inviter = guild.owner # fallback
+            except Exception as e:
+                logging.error(f"Error fetching audit log in {guild.name}: {e}")
+                inviter = guild.owner # fallback
+
+            if not inviter:
+                 inviter = guild.owner
+
+            try:
+                await inviter.send(
                     f"Xin chào, tôi là bot được thiết kế riêng cho server có ID `{self.config['GUILD_ID']}`."
                     " Tôi không được phép hoạt động ở server khác. Tôi sẽ rời khỏi server của bạn. Cảm ơn!"
                 )
             except discord.Forbidden:
-                logging.warning(f"Could not send a DM to the owner of {guild.name}.")
+                logging.warning(f"Could not send a DM to the inviter/owner of {guild.name}.")
             await guild.leave()
 
 
