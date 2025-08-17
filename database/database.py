@@ -1,4 +1,3 @@
-# database/database.py
 import sqlite3
 import logging
 
@@ -9,7 +8,7 @@ def init_db():
         con = sqlite3.connect(DB_PATH)
         cur = con.cursor()
         
-        # Bảng users
+        # Bang users
         cur.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER NOT NULL,
@@ -21,7 +20,7 @@ def init_db():
             )
         ''')
 
-        # Bảng shop_roles
+        # Bang shop_roles
         cur.execute('''
             CREATE TABLE IF NOT EXISTS shop_roles (
                 role_id INTEGER PRIMARY KEY,
@@ -30,6 +29,18 @@ def init_db():
             )
         ''')
         
+        # Bang custom_roles
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS custom_roles (
+                user_id INTEGER NOT NULL,
+                guild_id INTEGER NOT NULL,
+                role_id INTEGER NOT NULL,
+                role_name TEXT,
+                role_color TEXT,
+                PRIMARY KEY (user_id, guild_id)
+            )
+        ''')
+
         con.commit()
         con.close()
         logging.info("Database initialized successfully.")
@@ -57,7 +68,7 @@ def execute_query(query, params=(), fetch=None):
         logging.error(f"Database query failed: {e}")
         return None
 
-# --- User Functions ---
+# User Functions
 def get_or_create_user(user_id, guild_id):
     user = execute_query("SELECT * FROM users WHERE user_id = ? AND guild_id = ?", (user_id, guild_id), fetch='one')
     if not user:
@@ -72,7 +83,7 @@ def update_user_data(user_id, guild_id, **kwargs):
     query = f"UPDATE users SET {fields} WHERE user_id = ? AND guild_id = ?"
     execute_query(query, tuple(values))
 
-# --- Shop Role Functions ---
+# Shop Role Functions
 def add_role_to_shop(role_id, guild_id, price):
     execute_query("INSERT OR REPLACE INTO shop_roles (role_id, guild_id, price) VALUES (?, ?, ?)", (role_id, guild_id, price))
 
@@ -81,3 +92,16 @@ def remove_role_from_shop(role_id, guild_id):
 
 def get_shop_roles(guild_id):
     return execute_query("SELECT * FROM shop_roles WHERE guild_id = ? ORDER BY price ASC", (guild_id,), fetch='all')
+
+# Custom Role Functions
+def get_custom_role(user_id, guild_id):
+    return execute_query("SELECT * FROM custom_roles WHERE user_id = ? AND guild_id = ?", (user_id, guild_id), fetch='one')
+
+def add_or_update_custom_role(user_id, guild_id, role_id, role_name, role_color):
+    execute_query(
+        "INSERT OR REPLACE INTO custom_roles (user_id, guild_id, role_id, role_name, role_color) VALUES (?, ?, ?, ?, ?)",
+        (user_id, guild_id, role_id, role_name, role_color)
+    )
+
+def delete_custom_role_data(user_id, guild_id):
+    execute_query("DELETE FROM custom_roles WHERE user_id = ? AND guild_id = ?", (user_id, guild_id))

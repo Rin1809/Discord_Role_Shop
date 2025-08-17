@@ -1,7 +1,7 @@
 import discord
 from discord.ui import Button, View, Select
 from database import database as db
-from .shop_modals import PurchaseModal, SellModal
+from .shop_modals import PurchaseModal, SellModal, CustomRoleModal
 
 class QnASelect(Select):
     def __init__(self, bot):
@@ -138,7 +138,8 @@ class ShopActionSelect(Select):
         options = [
             discord.SelectOption(label="Danh Sách Role", value="list_roles", description="Xem tất cả các role đang được bán.", emoji="<:MenheraFlower:1406458230317645906>"),
             discord.SelectOption(label="Mua Role", value="purchase", description="Sở hữu ngay role bạn yêu thích.", emoji="<:MenheraFlowers:1406458246528635031>"),
-            discord.SelectOption(label="Bán Role", value="sell", description="Bán lại role đã mua để nhận lại coin.", emoji="<a:MenheraNod:1406458257349935244>")
+            discord.SelectOption(label="Bán Role", value="sell", description="Bán lại role đã mua để nhận lại coin.", emoji="<a:MenheraNod:1406458257349935244>"),
+            discord.SelectOption(label="Role Tùy Chỉnh (Booster)", value="custom_role", description="Tạo role với tên và màu của riêng bạn.", emoji="<a:boost:1406487216649277510>")
         ]
         super().__init__(custom_id="shop_view:action_select", placeholder="Chọn một hành động giao dịch...", min_values=1, max_values=1, options=options)
     
@@ -167,12 +168,47 @@ class ShopActionSelect(Select):
             await interaction.followup.send(embed=embed, ephemeral=True)
 
         elif action == "purchase":
-            modal = PurchaseModal(bot=self.bot)
-            await interaction.response.send_modal(modal)
+            await interaction.response.send_modal(PurchaseModal(bot=self.bot))
 
         elif action == "sell":
-            modal = SellModal(bot=self.bot)
-            await interaction.response.send_modal(modal)
+            await interaction.response.send_modal(SellModal(bot=self.bot))
+            
+        elif action == "custom_role":
+            # Xoa dong defer o day
+            
+            # --- CODE TEST ---
+            is_test_user = (interaction.user.id == 873576591693873252)
+            
+            if not is_test_user: 
+                custom_role_config = self.config.get('CUSTOM_ROLE_CONFIG', {})
+                min_boosts = custom_role_config.get('MIN_BOOST_COUNT', 2)
+    
+                boost_count = 0
+                if interaction.user.premium_since:
+                    boost_count = interaction.guild.premium_subscribers.count(interaction.user)
+    
+                if boost_count < min_boosts:
+                    # Doi followup -> response.send_message
+                    return await interaction.response.send_message(
+                        self.config['MESSAGES']['CUSTOM_ROLE_NO_BOOSTS'].format(min_boosts=min_boosts, boost_count=boost_count), 
+                        ephemeral=True
+                    )
+            
+            if db.get_custom_role(interaction.user.id, interaction.guild.id):
+                # Doi followup -> response.send_message
+                return await interaction.response.send_message(self.config['MESSAGES']['CUSTOM_ROLE_ALREADY_OWNED'], ephemeral=True)
+
+            price = self.config.get('CUSTOM_ROLE_CONFIG', {}).get('PRICE', 1000)
+            user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
+            if user_data['balance'] < price:
+                # Doi followup -> response.send_message
+                return await interaction.response.send_message(
+                    self.config['MESSAGES']['CUSTOM_ROLE_NO_COIN'].format(price=price, balance=user_data['balance']), 
+                    ephemeral=True
+                )
+
+            # Day la phan hoi duy nhat neu tat ca dieu kien hop le
+            await interaction.response.send_modal(CustomRoleModal(bot=self.bot, price=price))
 
 class ShopView(View):
     def __init__(self, bot): 
@@ -227,6 +263,5 @@ class ShopView(View):
         except discord.Forbidden:
             await interaction.followup.send("⚠️ Tôi không thể gửi tin nhắn riêng cho bạn. Vui lòng bật tin nhắn từ thành viên server.", ephemeral=True)
 
-# Fix loi load
 async def setup(bot):
     pass

@@ -1,6 +1,11 @@
 import discord
 from discord.ui import Modal, TextInput
 from database import database as db
+import re
+
+# Ham kiem tra ma mau hex
+def is_valid_hex_color(s):
+    return re.match(r'^#?([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$', s) is not None
 
 class PurchaseModal(Modal, title="Mua Role"):
     def __init__(self, bot):
@@ -161,6 +166,79 @@ class SellModal(Modal, title="Bán Lại Role"):
                 ephemeral=True
             )
 
-# Fix loi load
+class CustomRoleModal(Modal):
+    def __init__(self, bot, price=None, role_to_edit: discord.Role = None):
+        super().__init__(title="Tạo Hoặc Sửa Role Tùy Chỉnh")
+        self.bot = bot
+        self.config = bot.config
+        self.price = price
+        self.role_to_edit = role_to_edit
+        self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
+
+        self.add_item(TextInput(
+            label="Tên role bạn muốn",
+            placeholder="Ví dụ: Đại Gia Server",
+            custom_id="custom_role_name",
+            default=role_to_edit.name if role_to_edit else None # sua value -> default
+        ))
+        self.add_item(TextInput(
+            label="Mã màu HEX (ví dụ: #ff00af)",
+            placeholder="Nhập mã màu bắt đầu bằng #",
+            custom_id="custom_role_color",
+            default=str(role_to_edit.color) if role_to_edit else "#ff00af" # sua value -> default
+        ))
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
+        role_name = self.children[0].value
+        role_color_str = self.children[1].value
+
+        if not is_valid_hex_color(role_color_str):
+            return await interaction.followup.send("⚠️ Mã màu HEX không hợp lệ. Vui lòng thử lại (ví dụ: `#ff00af`).", ephemeral=True)
+        
+        # Chuyen hex sang int
+        color_int = int(role_color_str.lstrip('#'), 16)
+        new_color = discord.Color(color_int)
+
+        user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
+
+        # Xu ly sua role
+        if self.role_to_edit:
+            try:
+                await self.role_to_edit.edit(name=role_name, color=new_color, reason=f"Người dùng {interaction.user} tự sửa")
+                db.add_or_update_custom_role(interaction.user.id, interaction.guild.id, self.role_to_edit.id, role_name, role_color_str)
+                await interaction.followup.send(f"✅ Đã cập nhật thành công role {self.role_to_edit.mention} của bạn.", ephemeral=True)
+            except discord.Forbidden:
+                await interaction.followup.send("❌ Tôi không có quyền để chỉnh sửa role này.", ephemeral=True)
+            return
+
+        # Xu ly tao role moi
+        if user_data['balance'] < self.price:
+            return await interaction.followup.send(f"Bạn không đủ coin! Cần **{self.price} coin** nhưng bạn chỉ có **{user_data['balance']}**.", ephemeral=True)
+        
+        new_balance = user_data['balance'] - self.price
+
+        try:
+            # Tao role
+            new_role = await interaction.guild.create_role(
+                name=role_name,
+                color=new_color,
+                reason=f"Role tùy chỉnh của {interaction.user.name}"
+            )
+            # Gan role cho user
+            await interaction.user.add_roles(new_role)
+            
+            # Cap nhat database
+            db.update_user_data(interaction.user.id, interaction.guild.id, balance=new_balance)
+            db.add_or_update_custom_role(interaction.user.id, interaction.guild.id, new_role.id, role_name, role_color_str)
+            
+            await interaction.followup.send(f"🎉 Chúc mừng! Bạn đã tạo thành công role {new_role.mention}. Sử dụng `/myrole` để quản lý.", ephemeral=True)
+
+        except discord.Forbidden:
+            await interaction.followup.send("❌ Đã xảy ra lỗi! Tôi không có quyền tạo hoặc gán role. Giao dịch đã bị hủy.", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"Đã xảy ra lỗi không mong muốn: {e}", ephemeral=True)
+
 async def setup(bot):
     pass
