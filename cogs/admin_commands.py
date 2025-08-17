@@ -62,7 +62,7 @@ class AdminCommands(commands.Cog):
             except Exception:
                 pass 
 
-            leaderboard_thread = await panel_message.create_thread(name="🏆 Bảng Xếp Hạng Coin")
+            leaderboard_thread = await panel_message.create_thread(name="🏆 Bảng Xếp Hạng Coin 🏆")
             await leaderboard_thread.send("Bảng xếp hạng sẽ được cập nhật tại đây...")
             
             # luu id thread vao config
