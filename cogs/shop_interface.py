@@ -3,7 +3,6 @@ from discord.ext import commands
 from discord.ui import Button, View, Modal, TextInput, Select
 from database import database as db
 
-# --- UI moi cho Q&A ---
 class QnASelect(Select):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -48,7 +47,6 @@ class QnAView(View):
         super().__init__(timeout=180) 
         self.add_item(QnASelect(bot))
 
-# --- View cho DM ---
 class EarningRatesView(View):
     def __init__(self, bot: commands.Bot):
         super().__init__(timeout=None)
@@ -310,7 +308,6 @@ class ShopInterface(commands.Cog):
                 discord.SelectOption(label="Mua Role", value="purchase", description="Sở hữu ngay role bạn yêu thích.", emoji="<:MenheraFlowers:1406458246528635031>"),
                 discord.SelectOption(label="Bán Role", value="sell", description="Bán lại role đã mua để nhận lại coin.", emoji="<a:MenheraNod:1406458257349935244>")
             ]
-            # them custom_id de view luu tru
             super().__init__(custom_id="shop_view:action_select", placeholder="Chọn một hành động giao dịch...", min_values=1, max_values=1, options=options)
         
         async def callback(self, interaction: discord.Interaction):
@@ -370,7 +367,10 @@ class ShopInterface(commands.Cog):
                 color=self.embed_color
             )
             embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
-            embed.set_thumbnail(url=interaction.user.display_avatar.url)
+            
+            if interaction.guild.icon:
+                embed.set_thumbnail(url=interaction.guild.icon.url)
+
             balance_str = self.messages['BALANCE_FIELD_VALUE'].format(balance=user_data['balance'])
             embed.add_field(name=f"```{self.messages['BALANCE_FIELD_NAME']}```", value=balance_str, inline=False)
             if self.config.get('SHOP_EMBED_IMAGE_URL'):
