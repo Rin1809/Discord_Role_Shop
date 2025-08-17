@@ -14,7 +14,7 @@ class TasksHandler(commands.Cog):
     def cog_unload(self):
         self.update_leaderboard.cancel()
 
-    @tasks.loop(seconds=5)
+    @tasks.loop(minutes=1)
     async def update_leaderboard(self):
         thread_id = self.config.get('LEADERBOARD_THREAD_ID')
         guild_id = self.config.get('GUILD_ID')
@@ -53,7 +53,6 @@ class TasksHandler(commands.Cog):
             elif i == 2: emoji = "🥉"
             else: emoji = "🔹"
             
-            # format so de doc
             balance_formatted = f"{user_data['balance']:,}"
             
             line = f"{emoji} **Hạng {i+1}:** {display_name}\n> **Số dư:** `{balance_formatted}` <a:coin:1406137409384480850>"
@@ -62,35 +61,29 @@ class TasksHandler(commands.Cog):
         if not leaderboard_lines:
             embed.description = "Chưa có ai trên bảng xếp hạng."
         else:
-            # cach dong
             embed.description = "\n\n".join(leaderboard_lines)
 
         if guild.icon:
             embed.set_thumbnail(url=guild.icon.url)
         
-        # them anh
         if self.config.get('EARNING_RATES_IMAGE_URL'):
             embed.set_image(url=self.config.get('EARNING_RATES_IMAGE_URL'))
 
-        embed.set_footer(text="Cập nhật mỗi 5 giây", icon_url=self.bot.user.avatar.url)
+        embed.set_footer(text="Cập nhật mỗi 1 phút", icon_url=self.bot.user.avatar.url)
 
         try:
-            # tim msg de edit
             if self.leaderboard_message:
                 await self.leaderboard_message.edit(content=None, embed=embed)
             else:
-                # lay msg cuoi cung
                 async for msg in thread.history(limit=5):
                     if msg.author.id == self.bot.user.id:
                         self.leaderboard_message = msg
                         await self.leaderboard_message.edit(content=None, embed=embed)
                         return
                 
-                # neu ko co msg nao
                 self.leaderboard_message = await thread.send(embed=embed)
 
         except discord.NotFound:
-            # msg bi xoa
             self.leaderboard_message = None 
             try:
                 self.leaderboard_message = await thread.send(embed=embed)

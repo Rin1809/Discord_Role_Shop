@@ -1,14 +1,24 @@
 import sqlite3
 import logging
+import threading
 
 DB_PATH = './database/shop.db'
 
+# su dung thread-local de quan ly ket noi an toan
+local_storage = threading.local()
+
+def get_db_connection():
+    # moi thread se co ket noi rieng, tranh xung dot
+    if not hasattr(local_storage, 'connection'):
+        local_storage.connection = sqlite3.connect(DB_PATH, check_same_thread=False)
+        local_storage.connection.row_factory = sqlite3.Row
+    return local_storage.connection
+
 def init_db():
     try:
-        con = sqlite3.connect(DB_PATH)
+        con = get_db_connection()
         cur = con.cursor()
         
-        # Bang users
         cur.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER NOT NULL,
@@ -20,7 +30,6 @@ def init_db():
             )
         ''')
 
-        # Bang shop_roles
         cur.execute('''
             CREATE TABLE IF NOT EXISTS shop_roles (
                 role_id INTEGER PRIMARY KEY,
@@ -29,7 +38,6 @@ def init_db():
             )
         ''')
         
-        # Bang custom_roles
         cur.execute('''
             CREATE TABLE IF NOT EXISTS custom_roles (
                 user_id INTEGER NOT NULL,
@@ -42,15 +50,14 @@ def init_db():
         ''')
 
         con.commit()
-        con.close()
+        # khong dong ket noi o day
         logging.info("Database initialized successfully.")
     except Exception as e:
         logging.error(f"Error initializing database: {e}")
 
 def execute_query(query, params=(), fetch=None):
     try:
-        con = sqlite3.connect(DB_PATH)
-        con.row_factory = sqlite3.Row
+        con = get_db_connection()
         cur = con.cursor()
         cur.execute(query, params)
         
@@ -62,7 +69,6 @@ def execute_query(query, params=(), fetch=None):
             result = None
         
         con.commit()
-        con.close()
         return result
     except Exception as e:
         logging.error(f"Database query failed: {e}")

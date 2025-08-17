@@ -216,7 +216,6 @@ class EarningRatesView(View):
             db.delete_custom_role_data(interaction.user.id, guild_id)
             return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Role tùy chỉnh của bạn không còn tồn tại trên server. Dữ liệu đã được xóa.", ephemeral=True)
 
-        # tao embed dep hon
         embed = discord.Embed(
             description=self.config['MESSAGES']['CUSTOM_ROLE_MANAGE_PROMPT'],
             color=role_obj.color
@@ -289,43 +288,19 @@ class ShopActionSelect(Select):
                     boost_count = interaction.guild.premium_subscribers.count(interaction.user)
                 if boost_count < min_boosts:
                     msg = self.config['MESSAGES']['CUSTOM_ROLE_NO_BOOSTS'].format(min_boosts=min_boosts, boost_count=boost_count)
-                    dm_failed = False
-                    try:
-                        await interaction.user.send(msg)
-                    except discord.Forbidden:
-                        dm_failed = True
-                    if dm_failed:
-                        await interaction.response.send_message(msg, ephemeral=True)
-                    else:
-                        await interaction.response.send_message("<a:c_947079524435247135:1274398161200484446> Yêu cầu không hợp lệ. Vui lòng kiểm tra tin nhắn riêng.", ephemeral=True)
+                    await interaction.response.send_message(msg, ephemeral=True)
                     return
 
             if db.get_custom_role(interaction.user.id, interaction.guild.id):
                 msg = self.config['MESSAGES']['CUSTOM_ROLE_ALREADY_OWNED']
-                dm_failed = False
-                try:
-                    await interaction.user.send(msg)
-                except discord.Forbidden:
-                    dm_failed = True
-                if dm_failed:
-                    await interaction.response.send_message(msg, ephemeral=True)
-                else:
-                    await interaction.response.send_message("<a:c_947079524435247135:1274398161200484446> Yêu cầu đã được xử lý. Vui lòng kiểm tra tin nhắn riêng.", ephemeral=True)
+                await interaction.response.send_message(msg, ephemeral=True)
                 return
 
             price = custom_role_config.get('PRICE', 1000)
             user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
             if user_data['balance'] < price:
                 msg = self.config['MESSAGES']['CUSTOM_ROLE_NO_COIN'].format(price=price, balance=user_data['balance'])
-                dm_failed = False
-                try:
-                    await interaction.user.send(msg)
-                except discord.Forbidden:
-                    dm_failed = True
-                if dm_failed:
-                    await interaction.response.send_message(msg, ephemeral=True)
-                else:
-                    await interaction.response.send_message("<a:c_947079524435247135:1274398161200484446> Yêu cầu không hợp lệ. Vui lòng kiểm tra tin nhắn riêng.", ephemeral=True)
+                await interaction.response.send_message(msg, ephemeral=True)
                 return
             
             await interaction.response.send_modal(CustomRoleModal(bot=self.bot, price=price))
