@@ -47,39 +47,58 @@ class QnAView(View):
         super().__init__(timeout=180) 
         self.add_item(QnASelect(bot))
 
+class ManageCustomRoleActionSelect(Select):
+    def __init__(self, bot, role_to_edit: discord.Role):
+        self.bot = bot
+        self.role_to_edit = role_to_edit
+
+        options = [
+            discord.SelectOption(
+                label="Sửa Tên & Màu",
+                value="edit",
+                description="Thay đổi tên và màu sắc của role.",
+                emoji="✏️"
+            ),
+            discord.SelectOption(
+                label="Xóa Vĩnh Viễn",
+                value="delete",
+                description="Xóa role này khỏi bạn và server.",
+                emoji="🗑️"
+            )
+        ]
+        super().__init__(placeholder="Chọn một hành động để quản lý role...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        action = self.values[0]
+
+        if action == "edit":
+            modal = CustomRoleModal(bot=self.bot, role_to_edit=self.role_to_edit)
+            await interaction.response.send_modal(modal)
+
+        elif action == "delete":
+            await interaction.response.defer(ephemeral=True)
+            try:
+                if self.role_to_edit:
+                    await self.role_to_edit.delete(reason=f"Người dùng {interaction.user} tự xóa")
+                
+                db.delete_custom_role_data(interaction.user.id, interaction.guild.id)
+                await interaction.followup.send("✅ Đã xóa thành công role tùy chỉnh của bạn.", ephemeral=True)
+                
+                # vo hieu hoa
+                self.disabled = True
+                await interaction.edit_original_response(view=self.view)
+
+            except discord.Forbidden:
+                await interaction.followup.send("❌ Tôi không có quyền để xóa role này. Vui lòng liên hệ Admin.", ephemeral=True)
+            except Exception as e:
+                await interaction.followup.send(f"Đã xảy ra lỗi không xác định: {e}", ephemeral=True)
+
 class ManageCustomRoleView(View):
     def __init__(self, bot, role_to_edit: discord.Role):
         super().__init__(timeout=180)
         self.bot = bot
-        self.config = bot.config
         self.role_to_edit = role_to_edit
-    
-    @discord.ui.button(label="Sửa Role", style=discord.ButtonStyle.primary, emoji="✏️")
-    async def edit_role_callback(self, interaction: discord.Interaction, button: Button):
-        modal = CustomRoleModal(bot=self.bot, role_to_edit=self.role_to_edit)
-        await interaction.response.send_modal(modal)
-
-    @discord.ui.button(label="Xóa Role", style=discord.ButtonStyle.danger, emoji="🗑️")
-    async def delete_role_callback(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.defer(ephemeral=True)
-
-        try:
-            if self.role_to_edit:
-                await self.role_to_edit.delete(reason=f"Người dùng {interaction.user} tự xóa")
-            
-            guild_id = self.config['GUILD_ID']
-            db.delete_custom_role_data(interaction.user.id, guild_id)
-            await interaction.followup.send("✅ Đã xóa thành công role tùy chỉnh của bạn.", ephemeral=True)
-            
-            # vo hieu hoa nut
-            for item in self.children:
-                item.disabled = True
-            await interaction.edit_original_response(view=self)
-
-        except discord.Forbidden:
-            await interaction.followup.send("❌ Tôi không có quyền để xóa role này. Vui lòng liên hệ Admin.", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"Đã xảy ra lỗi không xác định: {e}", ephemeral=True)
+        self.add_item(ManageCustomRoleActionSelect(bot, role_to_edit))
 
 class EarningRatesView(View):
     def __init__(self, bot):
@@ -162,7 +181,7 @@ class EarningRatesView(View):
         
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @discord.ui.button(label="Quản lý Role cá nhân", style=discord.ButtonStyle.secondary, emoji="✨", row=1)
+    @discord.ui.button(label="Quản lý Role cá nhân", style=discord.ButtonStyle.secondary, emoji="<a:g_l933518643407495238:1274398152941637694>", row=1)
     async def manage_custom_role_callback(self, interaction: discord.Interaction, button: Button):
         await interaction.response.defer(ephemeral=True)
         
@@ -197,16 +216,19 @@ class EarningRatesView(View):
             db.delete_custom_role_data(interaction.user.id, guild_id)
             return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Role tùy chỉnh của bạn không còn tồn tại trên server. Dữ liệu đã được xóa.", ephemeral=True)
 
-        view = ManageCustomRoleView(bot=self.bot, role_to_edit=role_obj)
-        
-        # them anh vao embed
+        # tao embed dep hon
         embed = discord.Embed(
             description=self.config['MESSAGES']['CUSTOM_ROLE_MANAGE_PROMPT'],
-            color=self.embed_color
+            color=role_obj.color
         )
+        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.avatar.url)
+        embed.add_field(name="Tên Role Hiện Tại", value=f"```{role_obj.name}```", inline=True)
+        embed.add_field(name="Màu Sắc", value=f"```{str(role_obj.color)}```", inline=True)
+        
         if self.config.get('EARNING_RATES_IMAGE_URL'):
             embed.set_image(url=self.config.get('EARNING_RATES_IMAGE_URL'))
             
+        view = ManageCustomRoleView(bot=self.bot, role_to_edit=role_obj)
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 
