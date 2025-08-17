@@ -32,20 +32,23 @@ class ShopBot(commands.Bot):
 
     async def setup_hook(self):
         # Tai cac cogs
-        for filename in os.listdir('./cogs'):
+        cogs_folder = './cogs'
+        for filename in os.listdir(cogs_folder):
             if filename.endswith('.py'):
                 try:
                     await self.load_extension(f'cogs.{filename[:-3]}')
                     logging.info(f"Loaded cog: {filename}")
+                except commands.ExtensionAlreadyLoaded:
+                    pass
                 except Exception as e:
                     logging.error(f"Failed to load cog {filename}: {e}")
         
-        # Tao thu muc ui neu chua co
-        ui_dir = './cogs/ui'
+        # tao thu muc neu chua co
+        ui_dir = os.path.join(cogs_folder, 'ui')
         if not os.path.exists(ui_dir):
             os.makedirs(ui_dir)
             
-        # Them view vinh vien
+        # them view
         if not self.persistent_views_added:
             self.add_view(ShopView(bot=self))
             self.persistent_views_added = True

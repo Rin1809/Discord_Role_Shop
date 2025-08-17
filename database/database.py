@@ -83,6 +83,10 @@ def update_user_data(user_id, guild_id, **kwargs):
     query = f"UPDATE users SET {fields} WHERE user_id = ? AND guild_id = ?"
     execute_query(query, tuple(values))
 
+def get_top_users(guild_id, limit=20):
+    query = "SELECT user_id, balance FROM users WHERE guild_id = ? ORDER BY balance DESC LIMIT ?"
+    return execute_query(query, (guild_id, limit), fetch='all')
+
 # Shop Role Functions
 def add_role_to_shop(role_id, guild_id, price):
     execute_query("INSERT OR REPLACE INTO shop_roles (role_id, guild_id, price) VALUES (?, ?, ?)", (role_id, guild_id, price))

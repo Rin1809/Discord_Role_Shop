@@ -3,6 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from database import database as db
 from .shop_views import ShopView 
+import json
 
 class AdminCommands(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -13,16 +14,18 @@ class AdminCommands(commands.Cog):
     shop = app_commands.Group(name="shop", description="Các lệnh quản lý shop role")
     coin = app_commands.Group(name="coin", description="Các lệnh quản lý tiền tệ")
 
-    @shop.command(name="setup", description="Gửi bảng điều khiển shop vào kênh đã định.")
+    @shop.command(name="setup", description="Gửi bảng điều khiển shop và tạo thread bảng xếp hạng.")
     @app_commands.checks.has_permissions(administrator=True) 
     async def setup_shop(self, interaction: discord.Interaction): 
+        await interaction.response.defer(ephemeral=True)
+
         channel_id = self.config.get('SHOP_CHANNEL_ID')
         if not channel_id:
-            return await interaction.response.send_message("⚠️ `SHOP_CHANNEL_ID` chưa được thiết lập.", ephemeral=True)
+            return await interaction.followup.send("⚠️ `SHOP_CHANNEL_ID` chưa được thiết lập.", ephemeral=True)
         
-        channel = self.bot.get_channel(channel_id)
+        channel = self.bot.get_channel(int(channel_id))
         if not channel:
-            return await interaction.response.send_message(f"⚠️ Không tìm thấy kênh với ID `{channel_id}`.", ephemeral=True)
+            return await interaction.followup.send(f"⚠️ Không tìm thấy kênh với ID `{channel_id}`.", ephemeral=True)
         
         embed = discord.Embed(
             title=self.config['MESSAGES']['SHOP_EMBED_TITLE'],
@@ -45,10 +48,44 @@ class AdminCommands(commands.Cog):
         view = ShopView(bot=self.bot)
 
         try:
-            await channel.send(embed=embed, view=view)
-            await interaction.response.send_message(f"✅ Đã gửi bảng điều khiển shop tới {channel.mention}.", ephemeral=True)
+            panel_message = await channel.send(embed=embed, view=view)
+            
+            # tao thread bxh
+            leaderboard_thread = None
+            try:
+                # thu lay thread cu neu co
+                old_thread_id = self.config.get('LEADERBOARD_THREAD_ID')
+                if old_thread_id:
+                    old_thread = self.bot.get_channel(int(old_thread_id))
+                    if old_thread:
+                        await old_thread.edit(archived=True, locked=True) # khoa thread cu
+            except Exception:
+                pass 
+
+            leaderboard_thread = await panel_message.create_thread(name="🏆 Bảng Xếp Hạng Coin")
+            await leaderboard_thread.send("Bảng xếp hạng sẽ được cập nhật tại đây...")
+            
+            # luu id thread vao config
+            with open('config.json', 'r+', encoding='utf-8') as f:
+                config_data = json.load(f)
+                config_data['LEADERBOARD_THREAD_ID'] = leaderboard_thread.id
+                f.seek(0)
+                json.dump(config_data, f, indent=2, ensure_ascii=False)
+                f.truncate()
+            
+            # cap nhat config cho bot
+            self.bot.config['LEADERBOARD_THREAD_ID'] = leaderboard_thread.id
+            
+            # khoi dong lai task
+            task_cog = self.bot.get_cog('TasksHandler')
+            if task_cog:
+                task_cog.update_leaderboard.restart()
+
+            await interaction.followup.send(f"✅ Đã gửi bảng điều khiển shop tới {channel.mention} và tạo thread Bảng Xếp Hạng.", ephemeral=True)
         except discord.Forbidden:
-            await interaction.response.send_message(f"❌ Tôi không có quyền gửi tin nhắn vào kênh {channel.mention}.", ephemeral=True)
+            await interaction.followup.send(f"❌ Tôi không có quyền gửi tin nhắn hoặc tạo thread trong kênh {channel.mention}.", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"Lỗi không xác định: {e}", ephemeral=True)
 
     @shop.command(name="addrole", description="Thêm một role vào shop.")
     @app_commands.describe(role="Role cần thêm", price="Giá của role") 
