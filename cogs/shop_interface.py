@@ -30,7 +30,6 @@ class QnASelect(Select):
         if not answer_data:
             return await interaction.followup.send("⚠️ Lỗi: Không tìm thấy câu trả lời cho câu hỏi này.", ephemeral=True)
         
-        # lay guild tu config thay vi interaction
         guild = self.bot.get_guild(self.config['GUILD_ID'])
         if not guild:
             return await interaction.followup.send("⚠️ Lỗi nghiêm trọng: Không thể tìm thấy server được cấu hình.", ephemeral=True)
@@ -298,6 +297,56 @@ class ShopInterface(commands.Cog):
                     embed=receipt_embed, 
                     ephemeral=True
                 )
+    
+    class ShopActionSelect(Select):
+        def __init__(self, bot: commands.Bot):
+            self.bot = bot
+            self.config = bot.config
+            self.messages = self.config['MESSAGES']
+            self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
+
+            options = [
+                discord.SelectOption(label="Danh Sách Role", value="list_roles", description="Xem tất cả các role đang được bán.", emoji="<:MenheraFlower:1406458230317645906>"),
+                discord.SelectOption(label="Mua Role", value="purchase", description="Sở hữu ngay role bạn yêu thích.", emoji="<:MenheraFlowers:1406458246528635031>"),
+                discord.SelectOption(label="Bán Role", value="sell", description="Bán lại role đã mua để nhận lại coin.", emoji="<a:MenheraNod:1406458257349935244>")
+            ]
+            # them custom_id de view luu tru
+            super().__init__(custom_id="shop_view:action_select", placeholder="Chọn một hành động giao dịch...", min_values=1, max_values=1, options=options)
+        
+        async def callback(self, interaction: discord.Interaction):
+            action = self.values[0]
+
+            if action == "list_roles":
+                await interaction.response.defer(ephemeral=True)
+                shop_roles = db.get_shop_roles(interaction.guild.id)
+                embed = discord.Embed(
+                    title=self.messages['SHOP_ROLES_TITLE'],
+                    color=self.embed_color
+                )
+                if not shop_roles:
+                    embed.description = self.messages['SHOP_ROLES_EMPTY']
+                else:
+                    role_list_str = ""
+                    for i, role_data in enumerate(shop_roles):
+                        role = interaction.guild.get_role(role_data['role_id'])
+                        if role:
+                            role_list_str += f"### {i+1}. {role.mention}\n> **Giá:** `{role_data['price']}` 🪙\n"
+                    embed.description = self.messages['SHOP_ROLES_DESC'] + "\n\n" + role_list_str
+                
+                footer_text = self.config['FOOTER_MESSAGES']['ROLE_LIST']
+                embed.set_footer(
+                    text=f"────────────────────\n{footer_text}",
+                    icon_url=self.bot.user.avatar.url
+                )
+                await interaction.followup.send(embed=embed, ephemeral=True)
+
+            elif action == "purchase":
+                modal = ShopInterface.PurchaseModal(bot=self.bot)
+                await interaction.response.send_modal(modal)
+
+            elif action == "sell":
+                modal = ShopInterface.SellModal(bot=self.bot)
+                await interaction.response.send_modal(modal)
 
     class ShopView(View):
         def __init__(self, bot: commands.Bot): 
@@ -306,8 +355,10 @@ class ShopInterface(commands.Cog):
             self.config = bot.config
             self.messages = self.config['MESSAGES']
             self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
-        
-        @discord.ui.button(label="Tài Khoản", style=discord.ButtonStyle.secondary, custom_id="shop_view:account")
+            
+            self.add_item(ShopInterface.ShopActionSelect(bot=self.bot))
+
+        @discord.ui.button(label="Tài Khoản Của Tôi", style=discord.ButtonStyle.secondary, custom_id="shop_view:account", emoji="<a:z_cat_yolo:1326542766330740818>")
         async def account_button_callback(self, interaction: discord.Interaction, button: Button):
             await interaction.response.defer(ephemeral=True)
             
@@ -338,45 +389,6 @@ class ShopInterface(commands.Cog):
                 await interaction.followup.send("✅ Đã gửi thông tin tài khoản vào tin nhắn riêng của bạn!", ephemeral=True)
             except discord.Forbidden:
                 await interaction.followup.send("⚠️ Tôi không thể gửi tin nhắn riêng cho bạn. Vui lòng bật tin nhắn từ thành viên server.", ephemeral=True)
-
-        @discord.ui.button(label="Danh Sách Role", style=discord.ButtonStyle.secondary, custom_id="shop_view:list_roles")
-        async def list_roles_button_callback(self, interaction: discord.Interaction, button: Button):
-            await interaction.response.defer(ephemeral=True)
-            
-            shop_roles = db.get_shop_roles(interaction.guild.id)
-            embed = discord.Embed(
-                title=self.messages['SHOP_ROLES_TITLE'],
-                color=self.embed_color
-            )
-            
-            if not shop_roles:
-                embed.description = self.messages['SHOP_ROLES_EMPTY']
-            else:
-                role_list_str = ""
-                for i, role_data in enumerate(shop_roles):
-                    role = interaction.guild.get_role(role_data['role_id'])
-                    if role:
-                        role_list_str += f"### {i+1}. {role.mention}\n> **Giá:** `{role_data['price']}` 🪙\n"
-                embed.description = self.messages['SHOP_ROLES_DESC'] + "\n\n" + role_list_str
-            
-            footer_text = self.config['FOOTER_MESSAGES']['ROLE_LIST']
-            embed.set_footer(
-                text=f"────────────────────\n{footer_text}",
-                icon_url=self.bot.user.avatar.url
-            )
-
-            await interaction.followup.send(embed=embed, ephemeral=True)
-
-        @discord.ui.button(label="Mua Role", style=discord.ButtonStyle.secondary, custom_id="shop_view:purchase")
-        async def purchase_button_callback(self, interaction: discord.Interaction, button: Button):
-            modal = ShopInterface.PurchaseModal(bot=self.bot)
-            await interaction.response.send_modal(modal)
-
-        @discord.ui.button(label="Bán Role", style=discord.ButtonStyle.secondary, custom_id="shop_view:sell")
-        async def sell_button_callback(self, interaction: discord.Interaction, button: Button):
-            modal = ShopInterface.SellModal(bot=self.bot)
-            await interaction.response.send_modal(modal)
-
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(ShopInterface(bot))
