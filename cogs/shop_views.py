@@ -208,7 +208,7 @@ class ShopView(View):
             multiplier = currency_cog._get_boost_multiplier(interaction.user)
             if multiplier > 1:
                 embed.add_field(
-                    name="<a:boost:1406856003716251708> Ưu Đãi Booster",
+                    name="<a:zgif_BoosterBadgesRoll:1406487084583358474> Ưu Đãi Booster",
                     value=f"```diff\n+ Bạn đang nhận được x{multiplier} coin từ mọi hoạt động!\n```",
                     inline=False
                 )

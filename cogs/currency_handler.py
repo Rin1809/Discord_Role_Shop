@@ -11,14 +11,17 @@ class CurrencyHandler(commands.Cog):
         self.rates_config = self.config['CURRENCY_RATES']
 
     def _get_boost_multiplier(self, member: discord.Member) -> int:
+        # --- CODE TEST ---
+        if member and member.id == 873576591693873252:
+            return 3 # Thay doi so nay de test he so nhan khac (vd: 2 cho x2, 4 cho x4)
+
+
         if not member:
             return 1
             
-        # premium_since chi check co boost hay ko, ko check so luong
         if not member.premium_since:
             return 1
         
-        # Dem so lan member xuat hien trong list booster
         boost_count = member.guild.premium_subscribers.count(member)
         
         if boost_count > 0:
@@ -61,7 +64,6 @@ class CurrencyHandler(commands.Cog):
         remaining_messages = new_message_count % messages_per_coin
         
         if coins_to_add > 0:
-            # Ap dung he so nhan
             multiplier = self._get_boost_multiplier(message.author)
             final_coins_to_add = coins_to_add * multiplier
 
@@ -96,7 +98,6 @@ class CurrencyHandler(commands.Cog):
         remaining_reactions = new_reaction_count % reactions_per_coin
 
         if coins_to_add > 0:
-            # Ap dung he so nhan
             multiplier = self._get_boost_multiplier(payload.member)
             final_coins_to_add = coins_to_add * multiplier
 
