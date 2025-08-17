@@ -2,6 +2,7 @@ import discord
 from discord import app_commands 
 from discord.ext import commands
 from database import database as db
+from .shop_views import ShopView 
 
 class AdminCommands(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -29,7 +30,6 @@ class AdminCommands(commands.Cog):
             color=self.embed_color
         )
         
-        # them thumbnail neu co
         if self.config.get('SHOP_EMBED_THUMBNAIL_URL'):
             embed.set_thumbnail(url=self.config.get('SHOP_EMBED_THUMBNAIL_URL'))
 
@@ -41,12 +41,8 @@ class AdminCommands(commands.Cog):
         
         if self.config.get('SHOP_EMBED_IMAGE_URL'):
             embed.set_image(url=self.config.get('SHOP_EMBED_IMAGE_URL'))
-
-        shop_cog = self.bot.get_cog("ShopInterface")
-        if not shop_cog:
-            return await interaction.response.send_message("Lỗi: Cog 'ShopInterface' chưa được tải.", ephemeral=True)
         
-        view = shop_cog.ShopView(bot=self.bot)
+        view = ShopView(bot=self.bot)
 
         try:
             await channel.send(embed=embed, view=view)

@@ -1,15 +1,15 @@
-# main.py
 import discord
 from discord.ext import commands
 import json
 import os
 import logging
 from database import database as db
+from cogs.shop_views import ShopView
 
-# --- Cấu hình logging ---
+# --- Cau hinh logging ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s:%(levelname)s:%(name)s: %(message)s')
 
-# --- Tải cấu hình ---
+# --- Tai cau hinh ---
 try:
     with open('config.json', 'r', encoding='utf-8') as f:
         config = json.load(f)
@@ -17,12 +17,12 @@ except FileNotFoundError:
     logging.error("Config file not found. Please create a 'config.json'.")
     exit()
 
-# --- Thiết lập Intents ---
+# --- Thiet lap Intents ---
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 intents.reactions = True
-intents.guilds = True # can thiet cho on_guild_join
+intents.guilds = True 
 
 class ShopBot(commands.Bot):
     def __init__(self):
@@ -31,6 +31,7 @@ class ShopBot(commands.Bot):
         self.persistent_views_added = False
 
     async def setup_hook(self):
+        # Tai cac cogs
         for filename in os.listdir('./cogs'):
             if filename.endswith('.py'):
                 try:
@@ -38,13 +39,17 @@ class ShopBot(commands.Bot):
                     logging.info(f"Loaded cog: {filename}")
                 except Exception as e:
                     logging.error(f"Failed to load cog {filename}: {e}")
-
+        
+        # Tao thu muc ui neu chua co
+        ui_dir = './cogs/ui'
+        if not os.path.exists(ui_dir):
+            os.makedirs(ui_dir)
+            
+        # Them view vinh vien
         if not self.persistent_views_added:
-            shop_cog = self.get_cog("ShopInterface")
-            if shop_cog:
-                self.add_view(shop_cog.ShopView(bot=self))
-                self.persistent_views_added = True
-                logging.info("Persistent ShopView added.")
+            self.add_view(ShopView(bot=self))
+            self.persistent_views_added = True
+            logging.info("Persistent ShopView added.")
     
     async def on_ready(self):
         logging.info(f'Logged in as {self.user} (ID: {self.user.id})')
@@ -61,7 +66,6 @@ class ShopBot(commands.Bot):
             logging.warning(f"Bot was added to an unauthorized guild: {guild.name} ({guild.id}). Leaving.")
             
             inviter = None
-            # tim ng moi bot qua audit log
             try:
                 async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.bot_add):
                     if entry.target.id == self.user.id:
@@ -69,10 +73,10 @@ class ShopBot(commands.Bot):
                         break
             except discord.Forbidden:
                 logging.warning(f"Missing 'View Audit Log' permission in {guild.name} to find inviter.")
-                inviter = guild.owner # fallback
+                inviter = guild.owner 
             except Exception as e:
                 logging.error(f"Error fetching audit log in {guild.name}: {e}")
-                inviter = guild.owner # fallback
+                inviter = guild.owner 
 
             if not inviter:
                  inviter = guild.owner
@@ -87,7 +91,7 @@ class ShopBot(commands.Bot):
             await guild.leave()
 
 
-# --- Khởi tạo và chạy bot ---
+# --- Khoi tao va chay bot ---
 if __name__ == "__main__":
     db.init_db()
     
