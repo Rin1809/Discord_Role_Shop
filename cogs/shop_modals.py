@@ -27,11 +27,11 @@ class PurchaseModal(Modal, title="Mua Role"):
             if role_number_input <= 0:
                 raise ValueError
         except (ValueError, TypeError):
-            return await interaction.followup.send("⚠️ Vui lòng nhập một số thứ tự hợp lệ.", ephemeral=True)
+            return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Vui lòng nhập một số thứ tự hợp lệ.", ephemeral=True)
 
         shop_roles = db.get_shop_roles(interaction.guild.id)
         if not shop_roles or role_number_input > len(shop_roles):
-            return await interaction.followup.send("⚠️ Số thứ tự này không tồn tại trong shop.", ephemeral=True)
+            return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Số thứ tự này không tồn tại trong shop.", ephemeral=True)
         
         selected_role_data = shop_roles[role_number_input - 1]
         role_id = selected_role_data['role_id']
@@ -39,7 +39,7 @@ class PurchaseModal(Modal, title="Mua Role"):
         
         role_obj = interaction.guild.get_role(role_id)
         if not role_obj:
-            return await interaction.followup.send("⚠️ Role này không còn tồn tại trên server. Vui lòng liên hệ Admin.", ephemeral=True)
+            return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Role này không còn tồn tại trên server. Vui lòng liên hệ Admin.", ephemeral=True)
 
         user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
         
@@ -82,7 +82,7 @@ class PurchaseModal(Modal, title="Mua Role"):
             await interaction.followup.send("✅ Giao dịch thành công! Vui lòng kiểm tra tin nhắn riêng để xem biên lai.", ephemeral=True)
         except discord.Forbidden:
             await interaction.followup.send(
-                "⚠️ Tôi không thể gửi biên lai vào tin nhắn riêng của bạn. Giao dịch vẫn thành công. Đây là biên lai của bạn:", 
+                "<a:c_947079524435247135:1274398161200484446> Tôi không thể gửi biên lai vào tin nhắn riêng của bạn. Giao dịch vẫn thành công. Đây là biên lai của bạn:", 
                 embed=receipt_embed, 
                 ephemeral=True
             )
@@ -107,11 +107,11 @@ class SellModal(Modal, title="Bán Lại Role"):
             if role_number_input <= 0:
                 raise ValueError
         except (ValueError, TypeError):
-            return await interaction.followup.send("⚠️ Vui lòng nhập một số thứ tự hợp lệ.", ephemeral=True)
+            return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Vui lòng nhập một số thứ tự hợp lệ.", ephemeral=True)
 
         shop_roles = db.get_shop_roles(interaction.guild.id)
         if not shop_roles or role_number_input > len(shop_roles):
-            return await interaction.followup.send("⚠️ Số thứ tự này không tồn tại trong shop.", ephemeral=True)
+            return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Số thứ tự này không tồn tại trong shop.", ephemeral=True)
 
         selected_role_data = shop_roles[role_number_input - 1]
         role_id = selected_role_data['role_id']
@@ -119,7 +119,7 @@ class SellModal(Modal, title="Bán Lại Role"):
 
         role_obj = interaction.guild.get_role(role_id)
         if not role_obj:
-            return await interaction.followup.send("⚠️ Role này không còn tồn tại trên server. Vui lòng liên hệ Admin.", ephemeral=True)
+            return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Role này không còn tồn tại trên server. Vui lòng liên hệ Admin.", ephemeral=True)
 
         if role_obj not in interaction.user.roles:
             return await interaction.followup.send(f"Bạn không sở hữu role {role_obj.mention} để bán.", ephemeral=True)
@@ -161,7 +161,7 @@ class SellModal(Modal, title="Bán Lại Role"):
             await interaction.followup.send("✅ Giao dịch thành công! Vui lòng kiểm tra tin nhắn riêng để xem biên lai.", ephemeral=True)
         except discord.Forbidden:
             await interaction.followup.send(
-                "⚠️ Tôi không thể gửi biên lai vào tin nhắn riêng của bạn. Giao dịch vẫn thành công. Đây là biên lai của bạn:", 
+                "<a:c_947079524435247135:1274398161200484446> Tôi không thể gửi biên lai vào tin nhắn riêng của bạn. Giao dịch vẫn thành công. Đây là biên lai của bạn:", 
                 embed=receipt_embed, 
                 ephemeral=True
             )
@@ -179,13 +179,13 @@ class CustomRoleModal(Modal):
             label="Tên role bạn muốn",
             placeholder="Ví dụ: Đại Gia Server",
             custom_id="custom_role_name",
-            default=role_to_edit.name if role_to_edit else None # sua value -> default
+            default=role_to_edit.name if role_to_edit else None
         ))
         self.add_item(TextInput(
             label="Mã màu HEX (ví dụ: #ff00af)",
             placeholder="Nhập mã màu bắt đầu bằng #",
             custom_id="custom_role_color",
-            default=str(role_to_edit.color) if role_to_edit else "#ff00af" # sua value -> default
+            default=str(role_to_edit.color) if role_to_edit else "#ff00af"
         ))
     
     async def on_submit(self, interaction: discord.Interaction):
@@ -195,20 +195,32 @@ class CustomRoleModal(Modal):
         role_color_str = self.children[1].value
 
         if not is_valid_hex_color(role_color_str):
-            return await interaction.followup.send("⚠️ Mã màu HEX không hợp lệ. Vui lòng thử lại (ví dụ: `#ff00af`).", ephemeral=True)
+            return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Mã màu HEX không hợp lệ. Vui lòng thử lại (ví dụ: `#ff00af`).", ephemeral=True)
         
-        # Chuyen hex sang int
         color_int = int(role_color_str.lstrip('#'), 16)
         new_color = discord.Color(color_int)
+        
+        # Lay guild_id tu config vi tuong tac nay co the xay ra trong DM
+        guild_id = self.config['GUILD_ID']
+        guild = self.bot.get_guild(guild_id)
+        if not guild:
+            return await interaction.followup.send("Lỗi nghiêm trọng: Không tìm thấy server.", ephemeral=True)
 
-        user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
+        user_data = db.get_or_create_user(interaction.user.id, guild_id)
 
         # Xu ly sua role
         if self.role_to_edit:
             try:
                 await self.role_to_edit.edit(name=role_name, color=new_color, reason=f"Người dùng {interaction.user} tự sửa")
-                db.add_or_update_custom_role(interaction.user.id, interaction.guild.id, self.role_to_edit.id, role_name, role_color_str)
-                await interaction.followup.send(f"✅ Đã cập nhật thành công role {self.role_to_edit.mention} của bạn.", ephemeral=True)
+                db.add_or_update_custom_role(interaction.user.id, guild_id, self.role_to_edit.id, role_name, role_color_str)
+                
+                success_msg = f"✅ Đã cập nhật thành công role {self.role_to_edit.mention} của bạn."
+                try:
+                    await interaction.user.send(success_msg)
+                    await interaction.followup.send("✅ Đã xử lý! Vui lòng kiểm tra tin nhắn riêng.", ephemeral=True)
+                except discord.Forbidden:
+                    await interaction.followup.send(success_msg, ephemeral=True)
+
             except discord.Forbidden:
                 await interaction.followup.send("❌ Tôi không có quyền để chỉnh sửa role này.", ephemeral=True)
             return
@@ -220,20 +232,25 @@ class CustomRoleModal(Modal):
         new_balance = user_data['balance'] - self.price
 
         try:
-            # Tao role
-            new_role = await interaction.guild.create_role(
-                name=role_name,
-                color=new_color,
-                reason=f"Role tùy chỉnh của {interaction.user.name}"
+            # Lay member object de them role
+            member = guild.get_member(interaction.user.id)
+            if not member:
+                 return await interaction.followup.send("Lỗi: Không tìm thấy bạn trên server.", ephemeral=True)
+
+            new_role = await guild.create_role(
+                name=role_name, color=new_color, reason=f"Role tùy chỉnh của {interaction.user.name}"
             )
-            # Gan role cho user
-            await interaction.user.add_roles(new_role)
+            await member.add_roles(new_role)
             
-            # Cap nhat database
-            db.update_user_data(interaction.user.id, interaction.guild.id, balance=new_balance)
-            db.add_or_update_custom_role(interaction.user.id, interaction.guild.id, new_role.id, role_name, role_color_str)
+            db.update_user_data(interaction.user.id, guild_id, balance=new_balance)
+            db.add_or_update_custom_role(interaction.user.id, guild_id, new_role.id, role_name, role_color_str)
             
-            await interaction.followup.send(f"🎉 Chúc mừng! Bạn đã tạo thành công role {new_role.mention}. Sử dụng `/myrole` để quản lý.", ephemeral=True)
+            success_msg = f"<a:HanaCheer2:1388162123774820362> Chúc mừng! Bạn đã tạo thành công role {new_role.mention}."
+            try:
+                await interaction.user.send(success_msg)
+                await interaction.followup.send("✅ Giao dịch thành công! Vui lòng kiểm tra tin nhắn riêng.", ephemeral=True)
+            except discord.Forbidden:
+                await interaction.followup.send(success_msg, ephemeral=True)
 
         except discord.Forbidden:
             await interaction.followup.send("❌ Đã xảy ra lỗi! Tôi không có quyền tạo hoặc gán role. Giao dịch đã bị hủy.", ephemeral=True)

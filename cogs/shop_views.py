@@ -27,11 +27,11 @@ class QnASelect(Select):
         answer_data = next((item for item in self.qna_data if item["label"] == selected_label), None)
 
         if not answer_data:
-            return await interaction.followup.send("⚠️ Lỗi: Không tìm thấy câu trả lời cho câu hỏi này.", ephemeral=True)
+            return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Lỗi: Không tìm thấy câu trả lời cho câu hỏi này.", ephemeral=True)
         
         guild = self.bot.get_guild(self.config['GUILD_ID'])
         if not guild:
-            return await interaction.followup.send("⚠️ Lỗi nghiêm trọng: Không thể tìm thấy server được cấu hình.", ephemeral=True)
+            return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Lỗi nghiêm trọng: Không thể tìm thấy server được cấu hình.", ephemeral=True)
             
         embed = discord.Embed(
             title=f"{answer_data.get('emoji', '❓')} {answer_data.get('answer_title', selected_label)}",
@@ -47,6 +47,39 @@ class QnAView(View):
         super().__init__(timeout=180) 
         self.add_item(QnASelect(bot))
 
+class ManageCustomRoleView(View):
+    def __init__(self, bot, role_to_edit: discord.Role):
+        super().__init__(timeout=180)
+        self.bot = bot
+        self.config = bot.config
+        self.role_to_edit = role_to_edit
+    
+    @discord.ui.button(label="Sửa Role", style=discord.ButtonStyle.primary, emoji="✏️")
+    async def edit_role_callback(self, interaction: discord.Interaction, button: Button):
+        modal = CustomRoleModal(bot=self.bot, role_to_edit=self.role_to_edit)
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label="Xóa Role", style=discord.ButtonStyle.danger, emoji="🗑️")
+    async def delete_role_callback(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            if self.role_to_edit:
+                await self.role_to_edit.delete(reason=f"Người dùng {interaction.user} tự xóa")
+            
+            guild_id = self.config['GUILD_ID']
+            db.delete_custom_role_data(interaction.user.id, guild_id)
+            await interaction.followup.send("✅ Đã xóa thành công role tùy chỉnh của bạn.", ephemeral=True)
+            
+            for item in self.children:
+                item.disabled = True
+            await interaction.edit_original_response(view=self)
+
+        except discord.Forbidden:
+            await interaction.followup.send("❌ Tôi không có quyền để xóa role này. Vui lòng liên hệ Admin.", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"Đã xảy ra lỗi không xác định: {e}", ephemeral=True)
+
 class EarningRatesView(View):
     def __init__(self, bot):
         super().__init__(timeout=None)
@@ -55,7 +88,7 @@ class EarningRatesView(View):
         self.messages = self.config['MESSAGES']
         self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
 
-    @discord.ui.button(label="?", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="?", style=discord.ButtonStyle.secondary, row=0)
     async def bot_info_callback(self, interaction: discord.Interaction, button: Button):
         qna_view = QnAView(bot=self.bot)
         await interaction.response.send_message(
@@ -64,7 +97,7 @@ class EarningRatesView(View):
             ephemeral=True
         )
 
-    @discord.ui.button(label="Cách Đào Coin", style=discord.ButtonStyle.secondary, emoji="💰")
+    @discord.ui.button(label="Cách Đào Coin", style=discord.ButtonStyle.secondary, emoji="💰", row=1)
     async def show_rates_callback(self, interaction: discord.Interaction, button: Button):
         await interaction.response.defer(ephemeral=True)
         guild = self.bot.get_guild(self.config['GUILD_ID'])
@@ -128,6 +161,45 @@ class EarningRatesView(View):
         
         await interaction.followup.send(embed=embed, ephemeral=True)
 
+    @discord.ui.button(label="Quản lý Role cá nhân", style=discord.ButtonStyle.secondary, emoji="✨", row=1)
+    async def manage_custom_role_callback(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.defer(ephemeral=True)
+        
+        guild_id = self.config['GUILD_ID']
+        guild = self.bot.get_guild(guild_id)
+        if not guild:
+            return await interaction.followup.send("Lỗi: Không thể tìm thấy server được cấu hình.", ephemeral=True)
+
+        custom_role_config = self.config.get('CUSTOM_ROLE_CONFIG', {})
+        min_boosts = custom_role_config.get('MIN_BOOST_COUNT', 2)
+        
+        is_test_user = (interaction.user.id == 873576591693873252)
+
+        if not is_test_user:
+            boost_count = 0
+            member = guild.get_member(interaction.user.id)
+            if member and member.premium_since:
+                boost_count = guild.premium_subscribers.count(member)
+
+            if boost_count < min_boosts:
+                return await interaction.followup.send(
+                    self.config['MESSAGES']['CUSTOM_ROLE_NO_BOOSTS'].format(min_boosts=min_boosts, boost_count=boost_count), 
+                    ephemeral=True
+                )
+        
+        custom_role_data = db.get_custom_role(interaction.user.id, guild_id)
+        if not custom_role_data:
+            return await interaction.followup.send(self.config['MESSAGES']['CUSTOM_ROLE_NOT_OWNED'], ephemeral=True)
+
+        role_obj = guild.get_role(custom_role_data['role_id'])
+        if not role_obj:
+            db.delete_custom_role_data(interaction.user.id, guild_id)
+            return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Role tùy chỉnh của bạn không còn tồn tại trên server. Dữ liệu đã được xóa.", ephemeral=True)
+
+        view = ManageCustomRoleView(bot=self.bot, role_to_edit=role_obj)
+        await interaction.followup.send(self.config['MESSAGES']['CUSTOM_ROLE_MANAGE_PROMPT'], view=view, ephemeral=True)
+
+
 class ShopActionSelect(Select):
     def __init__(self, bot):
         self.bot = bot
@@ -174,40 +246,60 @@ class ShopActionSelect(Select):
             await interaction.response.send_modal(SellModal(bot=self.bot))
             
         elif action == "custom_role":
-            # Xoa dong defer o day
+            custom_role_config = self.config.get('CUSTOM_ROLE_CONFIG', {})
+            min_boosts = custom_role_config.get('MIN_BOOST_COUNT', 2)
             
-            # --- CODE TEST ---
             is_test_user = (interaction.user.id == 873576591693873252)
             
+            # Kiem tra boost
             if not is_test_user: 
-                custom_role_config = self.config.get('CUSTOM_ROLE_CONFIG', {})
-                min_boosts = custom_role_config.get('MIN_BOOST_COUNT', 2)
-    
                 boost_count = 0
                 if interaction.user.premium_since:
                     boost_count = interaction.guild.premium_subscribers.count(interaction.user)
-    
                 if boost_count < min_boosts:
-                    # Doi followup -> response.send_message
-                    return await interaction.response.send_message(
-                        self.config['MESSAGES']['CUSTOM_ROLE_NO_BOOSTS'].format(min_boosts=min_boosts, boost_count=boost_count), 
-                        ephemeral=True
-                    )
-            
-            if db.get_custom_role(interaction.user.id, interaction.guild.id):
-                # Doi followup -> response.send_message
-                return await interaction.response.send_message(self.config['MESSAGES']['CUSTOM_ROLE_ALREADY_OWNED'], ephemeral=True)
+                    msg = self.config['MESSAGES']['CUSTOM_ROLE_NO_BOOSTS'].format(min_boosts=min_boosts, boost_count=boost_count)
+                    dm_failed = False
+                    try:
+                        await interaction.user.send(msg)
+                    except discord.Forbidden:
+                        dm_failed = True
+                    if dm_failed:
+                        await interaction.response.send_message(msg, ephemeral=True)
+                    else:
+                        await interaction.response.send_message("<a:c_947079524435247135:1274398161200484446> Yêu cầu không hợp lệ. Vui lòng kiểm tra tin nhắn riêng.", ephemeral=True)
+                    return
 
-            price = self.config.get('CUSTOM_ROLE_CONFIG', {}).get('PRICE', 1000)
+            # Kiem tra da so huu role chua
+            if db.get_custom_role(interaction.user.id, interaction.guild.id):
+                msg = self.config['MESSAGES']['CUSTOM_ROLE_ALREADY_OWNED']
+                dm_failed = False
+                try:
+                    await interaction.user.send(msg)
+                except discord.Forbidden:
+                    dm_failed = True
+                if dm_failed:
+                    await interaction.response.send_message(msg, ephemeral=True)
+                else:
+                    await interaction.response.send_message("<a:c_947079524435247135:1274398161200484446> Yêu cầu đã được xử lý. Vui lòng kiểm tra tin nhắn riêng.", ephemeral=True)
+                return
+
+            # Kiem tra so du coin
+            price = custom_role_config.get('PRICE', 1000)
             user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
             if user_data['balance'] < price:
-                # Doi followup -> response.send_message
-                return await interaction.response.send_message(
-                    self.config['MESSAGES']['CUSTOM_ROLE_NO_COIN'].format(price=price, balance=user_data['balance']), 
-                    ephemeral=True
-                )
-
-            # Day la phan hoi duy nhat neu tat ca dieu kien hop le
+                msg = self.config['MESSAGES']['CUSTOM_ROLE_NO_COIN'].format(price=price, balance=user_data['balance'])
+                dm_failed = False
+                try:
+                    await interaction.user.send(msg)
+                except discord.Forbidden:
+                    dm_failed = True
+                if dm_failed:
+                    await interaction.response.send_message(msg, ephemeral=True)
+                else:
+                    await interaction.response.send_message("<a:c_947079524435247135:1274398161200484446> Yêu cầu không hợp lệ. Vui lòng kiểm tra tin nhắn riêng.", ephemeral=True)
+                return
+            
+            # Neu tat ca hop le, gui modal
             await interaction.response.send_modal(CustomRoleModal(bot=self.bot, price=price))
 
 class ShopView(View):
@@ -261,7 +353,7 @@ class ShopView(View):
             await interaction.user.send(embed=embed, view=view)
             await interaction.followup.send("✅ Đã gửi thông tin tài khoản vào tin nhắn riêng của bạn!", ephemeral=True)
         except discord.Forbidden:
-            await interaction.followup.send("⚠️ Tôi không thể gửi tin nhắn riêng cho bạn. Vui lòng bật tin nhắn từ thành viên server.", ephemeral=True)
+            await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Tôi không thể gửi tin nhắn riêng cho bạn. Vui lòng bật tin nhắn từ thành viên server.", ephemeral=True)
 
 async def setup(bot):
     pass

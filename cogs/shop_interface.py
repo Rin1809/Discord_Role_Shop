@@ -18,13 +18,13 @@ class ShopInterface(commands.Cog):
 
         custom_role_data = db.get_custom_role(interaction.user.id, interaction.guild.id)
         if not custom_role_data:
-            return await interaction.followup.send("⚠️ Bạn chưa sở hữu role tùy chỉnh nào để chỉnh sửa.", ephemeral=True)
+            return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Bạn chưa sở hữu role tùy chỉnh nào để chỉnh sửa.", ephemeral=True)
 
         role_id = custom_role_data['role_id']
         role_obj = interaction.guild.get_role(role_id)
         if not role_obj:
             db.delete_custom_role_data(interaction.user.id, interaction.guild.id) # Xoa db neu role ko ton tai
-            return await interaction.followup.send("⚠️ Role tùy chỉnh của bạn không còn tồn tại trên server. Dữ liệu đã được xóa.", ephemeral=True)
+            return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Role tùy chỉnh của bạn không còn tồn tại trên server. Dữ liệu đã được xóa.", ephemeral=True)
         
         # Tao modal voi du lieu co san
         modal = CustomRoleModal(bot=self.bot, role_to_edit=role_obj)
@@ -41,7 +41,7 @@ class ShopInterface(commands.Cog):
 
         custom_role_data = db.get_custom_role(interaction.user.id, interaction.guild.id)
         if not custom_role_data:
-            return await interaction.followup.send("⚠️ Bạn không có role tùy chỉnh nào để xóa.", ephemeral=True)
+            return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Bạn không có role tùy chỉnh nào để xóa.", ephemeral=True)
         
         role_id = custom_role_data['role_id']
         role_obj = interaction.guild.get_role(role_id)
