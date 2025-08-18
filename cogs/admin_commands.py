@@ -18,10 +18,13 @@ class AdminCommands(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True) 
     async def setup_shop(self, interaction: discord.Interaction): 
         await interaction.response.defer(ephemeral=True)
+        
+        guild_id_str = str(interaction.guild.id)
+        shop_channels = self.config.get('SHOP_CHANNELS', {})
+        channel_id = shop_channels.get(guild_id_str)
 
-        channel_id = self.config.get('SHOP_CHANNEL_ID')
         if not channel_id:
-            return await interaction.followup.send("⚠️ `SHOP_CHANNEL_ID` chưa được thiết lập.", ephemeral=True)
+            return await interaction.followup.send(f"⚠️ Kênh shop cho server này chưa được thiết lập trong `config.json`.", ephemeral=True)
         
         channel = self.bot.get_channel(int(channel_id))
         if not channel:
@@ -52,13 +55,15 @@ class AdminCommands(commands.Cog):
             
             # tao thread bxh
             leaderboard_thread = None
+            leaderboards_config = self.config.get('LEADERBOARDS', {})
+            old_thread_id = leaderboards_config.get(guild_id_str)
+            
             try:
-                # thu lay thread cu neu co
-                old_thread_id = self.config.get('LEADERBOARD_THREAD_ID')
+                # khoa thread cu neu co
                 if old_thread_id:
                     old_thread = self.bot.get_channel(int(old_thread_id))
                     if old_thread:
-                        await old_thread.edit(archived=True, locked=True) # khoa thread cu
+                        await old_thread.edit(archived=True, locked=True)
             except Exception:
                 pass 
 
@@ -68,20 +73,23 @@ class AdminCommands(commands.Cog):
             # luu id thread vao config
             with open('config.json', 'r+', encoding='utf-8') as f:
                 config_data = json.load(f)
-                config_data['LEADERBOARD_THREAD_ID'] = leaderboard_thread.id
+                if 'LEADERBOARDS' not in config_data:
+                    config_data['LEADERBOARDS'] = {}
+                config_data['LEADERBOARDS'][guild_id_str] = leaderboard_thread.id
+                
                 f.seek(0)
                 json.dump(config_data, f, indent=2, ensure_ascii=False)
                 f.truncate()
             
             # cap nhat config cho bot
-            self.bot.config['LEADERBOARD_THREAD_ID'] = leaderboard_thread.id
+            self.bot.config['LEADERBOARDS'][guild_id_str] = leaderboard_thread.id
             
             # khoi dong lai task
             task_cog = self.bot.get_cog('TasksHandler')
             if task_cog:
                 task_cog.update_leaderboard.restart()
 
-            await interaction.followup.send(f"✅ Đã gửi bảng điều khiển shop tới {channel.mention} và tạo thread Bảng Xếp Hạng.", ephemeral=True)
+            await interaction.followup.send(f"✅ Đã gửi bảng điều khiển shop tới {channel.mention} và tạo thread BXH.", ephemeral=True)
         except discord.Forbidden:
             await interaction.followup.send(f"❌ Tôi không có quyền gửi tin nhắn hoặc tạo thread trong kênh {channel.mention}.", ephemeral=True)
         except Exception as e:

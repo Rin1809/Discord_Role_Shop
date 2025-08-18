@@ -7,22 +7,17 @@ class CurrencyHandler(commands.Cog):
     def __init__(self, bot: commands.Bot): 
         self.bot = bot
         self.config = bot.config
-        self.guild_id = self.config['GUILD_ID']
+        self.authorized_guilds = self.config['AUTHORIZED_GUILD_IDS']
         self.rates_config = self.config['CURRENCY_RATES']
 
     def _get_boost_multiplier(self, member: discord.Member) -> int:
-        # --- CODE TEST ---
         if member and member.id == 873576591693873252:
-            return 3 # test he so nhan khac (vd: 2 cho x2, 4 cho x4)
+            return 3
 
-
-        if not member:
-            return 1
-            
-        if not member.premium_since:
+        if not member or not member.premium_since:
             return 1
         
-        boost_count = member.guild.premium_subscribers.count(member)
+        boost_count = sum(1 for m in member.guild.premium_subscribers if m.id == member.id)
         
         if boost_count > 0:
             return boost_count + 1
@@ -47,7 +42,7 @@ class CurrencyHandler(commands.Cog):
         if message.author.bot or not message.guild:
             return
         
-        if message.guild.id != self.guild_id:
+        if message.guild.id not in self.authorized_guilds:
             return
 
         current_rates = self._get_rates_for_channel(message.channel)
@@ -77,7 +72,7 @@ class CurrencyHandler(commands.Cog):
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
-        if not payload.guild_id or payload.guild_id != self.guild_id or payload.member.bot:
+        if not payload.guild_id or payload.guild_id not in self.authorized_guilds or payload.member.bot:
             return
         
         channel = self.bot.get_channel(payload.channel_id)
@@ -91,9 +86,7 @@ class CurrencyHandler(commands.Cog):
             return
 
         user_data = db.get_or_create_user(payload.user_id, payload.guild_id)
-
         new_reaction_count = user_data['reaction_count'] + 1
-
         coins_to_add = new_reaction_count // reactions_per_coin
         remaining_reactions = new_reaction_count % reactions_per_coin
 
