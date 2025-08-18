@@ -2,7 +2,7 @@ import discord
 from discord.ui import Button, View, Select
 from database import database as db
 from .shop_modals import PurchaseModal, SellModal, CustomRoleModal
-from utils import format_text # Sua dong import nay
+from utils import format_text
 
 class QnASelect(Select):
     def __init__(self, bot, guild_config, guild_id: int):
@@ -308,7 +308,7 @@ class ShopActionSelect(Select):
                 await interaction.response.send_message(msg, ephemeral=True)
                 return
 
-            price = custom_role_config.get('PRICE', 1000)
+            price = int(custom_role_config.get('PRICE', 1000)) # dam bao gia la so
             user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
             if user_data['balance'] < price:
                 msg = messages.get('CUSTOM_ROLE_NO_COIN', "Khong du tien.").format(price=price, balance=user_data['balance'])
