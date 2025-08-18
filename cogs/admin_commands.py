@@ -21,8 +21,8 @@ class AdminCommands(commands.Cog):
     async def setup_shop(self, interaction: discord.Interaction): 
         await interaction.response.defer(ephemeral=True)
         
-        guild_id_str = str(interaction.guild.id)
-        guild_config = await self.get_guild_config(interaction.guild.id)
+        guild_id = interaction.guild.id
+        guild_config = await self.get_guild_config(guild_id)
         
         if not guild_config:
             return await interaction.followup.send("⚠️ Cấu hình cho server này chưa được thiết lập trong database.", ephemeral=True)
@@ -35,7 +35,7 @@ class AdminCommands(commands.Cog):
         if not channel:
             return await interaction.followup.send(f"⚠️ Không tìm thấy kênh với ID `{channel_id}`.", ephemeral=True)
         
-        embed_color = discord.Color(int(guild_config.get('EMBED_COLOR', '0xff00af'), 16))
+        embed_color = discord.Color(int(str(guild_config.get('EMBED_COLOR', '#ff00af')).lstrip('#'), 16))
         messages = guild_config.get('MESSAGES', {})
 
         embed = discord.Embed(
@@ -77,9 +77,10 @@ class AdminCommands(commands.Cog):
             leaderboard_thread = await panel_message.create_thread(name="🏆 Bảng Xếp Hạng Coin 🏆")
             await leaderboard_thread.send("Bảng xếp hạng sẽ được cập nhật tại đây...")
             
-            # luu id vao db va cache
-            db.update_guild_config(interaction.guild.id, leaderboard_thread_id=leaderboard_thread.id)
-            self.bot.guild_configs[guild_id_str]['leaderboard_thread_id'] = leaderboard_thread.id
+            # luu id vao db
+            db.update_guild_config(guild_id, leaderboard_thread_id=leaderboard_thread.id)
+            # reload config de cache cap nhat
+            await self.bot.reload_guild_config(guild_id)
             
             # khoi dong lai task
             task_cog = self.bot.get_cog('TasksHandler')
@@ -91,6 +92,16 @@ class AdminCommands(commands.Cog):
             await interaction.followup.send(f"❌ Tôi không có quyền gửi tin nhắn hoặc tạo thread trong kênh {channel.mention}.", ephemeral=True)
         except Exception as e:
             await interaction.followup.send(f"Lỗi không xác định: {e}", ephemeral=True)
+
+    @shop.command(name="reload_config", description="Tải lại cấu hình từ database cho server này.")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def reload_config(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        success = await self.bot.reload_guild_config(interaction.guild.id)
+        if success:
+            await interaction.followup.send("✅ Đã tải lại thành công cấu hình mới nhất từ database.", ephemeral=True)
+        else:
+            await interaction.followup.send("⚠️ Không thể tải lại cấu hình. Vui lòng kiểm tra lại database.", ephemeral=True)
 
     @shop.command(name="addrole", description="Thêm một role vào shop.")
     @app_commands.describe(role="Role cần thêm", price="Giá của role") 

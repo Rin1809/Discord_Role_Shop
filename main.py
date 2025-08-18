@@ -30,6 +30,17 @@ class ShopBot(commands.Bot):
         self.global_config = global_config
         self.guild_configs = {} # cache config
         self.persistent_views_added = False
+        
+    async def reload_guild_config(self, guild_id: int):
+        # Ham load lai config cho 1 guild
+        logging.info(f"Reloading config cho guild {guild_id}...")
+        config = db.get_guild_config(guild_id)
+        if config:
+            self.guild_configs[str(guild_id)] = config
+            logging.info(f"Config cho guild {guild_id} da duoc reload.")
+            return True
+        logging.warning(f"Khong tim thay config cho guild {guild_id} de reload.")
+        return False
 
     async def setup_hook(self):
         # tai config tu db

@@ -1,6 +1,6 @@
 import psycopg2
 from psycopg2 import pool
-from psycopg2.extras import Json
+from psycopg2.extras import Json, RealDictCursor
 import logging
 import json
 from contextlib import contextmanager
@@ -59,12 +59,10 @@ def init_db(database_url: str):
                     )
                 ''')
 
-                # bang config
+                # bang config, don gian hoa
                 cur.execute('''
                     CREATE TABLE IF NOT EXISTS guild_configs (
                         guild_id BIGINT PRIMARY KEY,
-                        shop_channel_id BIGINT,
-                        leaderboard_thread_id BIGINT,
                         config_data JSONB
                     )
                 ''')
@@ -77,16 +75,14 @@ def init_db(database_url: str):
 def execute_query(query, params=(), fetch=None):
     try:
         with get_db_connection() as conn:
-            with conn.cursor() as cur:
+            # dung RealDictCursor de tu dong tra ve dict
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(query, params)
                 
                 if fetch == 'one':
-                    result = cur.fetchone()
-                    return dict(zip([desc[0] for desc in cur.description], result)) if result else None
+                    return cur.fetchone()
                 elif fetch == 'all':
-                    results = cur.fetchall()
-                    columns = [desc[0] for desc in cur.description]
-                    return [dict(zip(columns, row)) for row in results]
+                    return cur.fetchall()
                 else:
                     conn.commit()
                     return None
@@ -148,48 +144,34 @@ def delete_custom_role_data(user_id, guild_id):
 
 # Guild Config Functions
 def get_all_guild_configs():
-    configs = execute_query("SELECT * FROM guild_configs", fetch='all')
+    configs_list = execute_query("SELECT guild_id, config_data FROM guild_configs", fetch='all')
     config_map = {}
-    if configs:
-        for config in configs:
-            guild_id_str = str(config['guild_id'])
-            # gop config
-            combined_config = config.get('config_data', {})
-            if 'shop_channel_id' in config:
-                combined_config['shop_channel_id'] = config['shop_channel_id']
-            if 'leaderboard_thread_id' in config:
-                combined_config['leaderboard_thread_id'] = config['leaderboard_thread_id']
-            config_map[guild_id_str] = combined_config
+    if configs_list:
+        for config_row in configs_list:
+            guild_id_str = str(config_row['guild_id'])
+            config_map[guild_id_str] = config_row.get('config_data', {})
     return config_map
 
+def get_guild_config(guild_id: int):
+    # Lay config cho 1 guild
+    row = execute_query("SELECT config_data FROM guild_configs WHERE guild_id = %s", (guild_id,), fetch='one')
+    return row.get('config_data', {}) if row else None
+
 def update_guild_config(guild_id, **kwargs):
-    # tach rieng cot chinh va json
-    main_cols = ['shop_channel_id', 'leaderboard_thread_id']
-    main_col_updates = {k: v for k, v in kwargs.items() if k in main_cols}
-    json_data_updates = {k: v for k, v in kwargs.items() if k not in main_cols}
-
-    params = []
+    # Ham nay don gian hon nhieu
+    current_config = get_guild_config(guild_id)
+    if current_config is None:
+        current_config = {}
     
-    # update cot chinh
-    if main_col_updates:
-        fields = ', '.join([f'"{key}" = %s' for key in main_col_updates])
-        values = list(main_col_updates.values())
-        params.extend(values)
-        query = f"UPDATE guild_configs SET {fields} WHERE guild_id = %s"
-        params.append(guild_id)
-        execute_query(query, tuple(params))
+    # merge
+    current_config.update(kwargs)
 
-    # update json
-    if json_data_updates:
-        # lay json hien tai
-        current_config = execute_query("SELECT config_data FROM guild_configs WHERE guild_id = %s", (guild_id,), fetch='one')
-        current_json = current_config['config_data'] if current_config and current_config['config_data'] else {}
-        
-        # merge
-        current_json.update(json_data_updates)
-
-        # update lai
-        execute_query(
-            "UPDATE guild_configs SET config_data = %s WHERE guild_id = %s",
-            (Json(current_json), guild_id)
-        )
+    # update lai vao db
+    execute_query(
+        """
+        UPDATE guild_configs 
+        SET config_data = %s 
+        WHERE guild_id = %s
+        """,
+        (Json(current_config), guild_id)
+    )
