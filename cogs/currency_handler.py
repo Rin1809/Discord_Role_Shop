@@ -12,10 +12,8 @@ class CurrencyHandler(commands.Cog):
 
     def _get_boost_multiplier(self, member: discord.Member) -> int:
         # --- CODE TEST ---
-        # Thay ID cua ban vao day de gia lap booster
-        # Vi du: ID 873576591693873252 se luon nhan duoc x3 coin
         if member and member.id == 873576591693873252:
-            return 3 # Thay doi so nay de test he so nhan khac (vd: 2 cho x2, 4 cho x4)
+            return 3 # test he so nhan khac (vd: 2 cho x2, 4 cho x4)
 
 
         if not member:
