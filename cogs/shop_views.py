@@ -124,16 +124,66 @@ class EarningRatesView(View):
     @discord.ui.button(label="Cách Đào Coin", style=discord.ButtonStyle.secondary, emoji="💰", row=1)
     async def show_rates_callback(self, interaction: discord.Interaction, button: Button):
         await interaction.response.defer(ephemeral=True)
-        guild = self.bot.get_guild(self.guild_id) # lay guild tu id
+        guild = self.bot.get_guild(self.guild_id)
         if not guild:
             return await interaction.followup.send("Lỗi: Không thể tìm thấy server tương ứng.", ephemeral=True)
-            
-        desc = format_text(self.messages.get('EARNING_RATES_DESC', ''))
-        desc += format_text(self.messages.get('BOOSTER_MULTIPLIER_INFO', ''))
 
+        # Sap xep lai logic hien thi
+        desc_parts = []
+        
+        # 1. Mo ta chung
+        if base_desc := self.messages.get('EARNING_RATES_DESC'):
+            desc_parts.append(format_text(base_desc))
+
+        # 2. Uu dai Booster
+        if booster_info := self.messages.get('BOOSTER_MULTIPLIER_INFO'):
+            desc_parts.append(format_text(booster_info))
+
+        # 3. Gom tat ca ty le vao mot khoi
+        rates_lines = []
+        currency_rates = self.guild_config.get('CURRENCY_RATES', {})
+
+        # Ty le mac dinh
+        if default_rates := currency_rates.get('default'):
+            rates_lines.append(f"**<:g_chamhoi:1326543673957027961> Tỷ lệ mặc định**")
+            if msg_rate := default_rates.get('MESSAGES_PER_COIN'):
+                rates_lines.append(f"> <a:timchat:1406136711741706301> `{msg_rate}` tin nhắn = `1` <a:coin:1406137409384480850>")
+            if react_rate := default_rates.get('REACTIONS_PER_COIN'):
+                rates_lines.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
+            rates_lines.append("")
+
+        # Ty le theo danh muc
+        if categories_config := currency_rates.get('categories', {}):
+            for cat_id, rates in categories_config.items():
+                category = guild.get_channel(int(cat_id))
+                if category:
+                    rates_lines.append(f"**<:g_chamhoi:1326543673957027961> Danh mục: {category.name}**")
+                    if msg_rate := rates.get('MESSAGES_PER_COIN'):
+                        rates_lines.append(f"> <a:timchat:1406136711741706301> `{msg_rate}` tin nhắn = `1` <a:coin:1406137409384480850>")
+                    if react_rate := rates.get('REACTIONS_PER_COIN'):
+                        rates_lines.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
+                    rates_lines.append("") 
+
+        # Ty le theo kenh
+        if channels_config := currency_rates.get('channels', {}):
+            for chan_id, rates in channels_config.items():
+                channel = guild.get_channel(int(chan_id))
+                if channel:
+                    rates_lines.append(f"**<:channel:1406136670709092422> Kênh: {channel.mention}**")
+                    if msg_rate := rates.get('MESSAGES_PER_COIN'):
+                        rates_lines.append(f"> <a:timchat:1406136711741706301> `{msg_rate}` tin nhắn = `1` <a:coin:1406137409384480850>")
+                    if react_rate := rates.get('REACTIONS_PER_COIN'):
+                        rates_lines.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
+                    rates_lines.append("") 
+        
+        if rates_lines:
+            if rates_lines[-1] == "": rates_lines.pop() # Xoa dong trang thua
+            desc_parts.append("\n".join(rates_lines))
+
+        # Tao embed cuoi cung
         embed = discord.Embed(
             title=self.messages.get('EARNING_RATES_TITLE', "Tỷ lệ kiếm coin"),
-            description=desc,
+            description="\n\n".join(desc_parts),
             color=self.embed_color
         )
         
@@ -145,46 +195,12 @@ class EarningRatesView(View):
 
         if self.guild_config.get('EARNING_RATES_IMAGE_URL'):
             embed.set_image(url=self.guild_config.get('EARNING_RATES_IMAGE_URL'))
-
-        special_rates_list = []
-        currency_rates = self.guild_config.get('CURRENCY_RATES', {})
-        categories_config = currency_rates.get('categories', {})
-        if categories_config:
-            for cat_id, rates in categories_config.items():
-                category = guild.get_channel(int(cat_id))
-                if category:
-                    special_rates_list.append(f"**<:g_chamhoi:1326543673957027961> Danh mục: {category.name}**")
-                    msg_rate = rates.get('MESSAGES_PER_COIN')
-                    react_rate = rates.get('REACTIONS_PER_COIN')
-                    if msg_rate:
-                        special_rates_list.append(f"> <a:timchat:1406136711741706301> `{msg_rate}` tin nhắn = `1` <a:coin:1406137409384480850>")
-                    if react_rate:
-                        special_rates_list.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
-                    special_rates_list.append("") 
-
-        channels_config = currency_rates.get('channels', {})
-        if channels_config:
-            for chan_id, rates in channels_config.items():
-                channel = guild.get_channel(int(chan_id))
-                if channel:
-                    special_rates_list.append(f"**<:channel:1406136670709092422> Kênh: {channel.mention}**")
-                    msg_rate = rates.get('MESSAGES_PER_COIN')
-                    react_rate = rates.get('REACTIONS_PER_COIN')
-                    if msg_rate:
-                        special_rates_list.append(f"> <a:timchat:1406136711741706301> `{msg_rate}` tin nhắn = `1` <a:coin:1406137409384480850>")
-                    if react_rate:
-                        special_rates_list.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
-                    special_rates_list.append("") 
-        
-        if special_rates_list:
-            if special_rates_list[-1] == "": special_rates_list.pop()
-            special_rates_desc = "\n".join(special_rates_list)
-            embed.description += "\n\n" + special_rates_desc
         
         footer_text = self.guild_config.get('FOOTER_MESSAGES', {}).get('EARNING_RATES', '')
-        embed.set_footer( text=f"────────────────────\n{footer_text}", icon_url=self.bot.user.avatar.url )
+        embed.set_footer(text=f"────────────────────\n{footer_text}", icon_url=self.bot.user.avatar.url)
         
         await interaction.followup.send(embed=embed, ephemeral=True)
+
 
     @discord.ui.button(label="Quản lý Role cá nhân", style=discord.ButtonStyle.secondary, emoji="<a:g_l933518643407495238:1274398152941637694>", row=1)
     async def manage_custom_role_callback(self, interaction: discord.Interaction, button: Button):
@@ -201,15 +217,13 @@ class EarningRatesView(View):
         
         is_test_user = (interaction.user.id == 873576591693873252)
         
-        # Can lay member object tu guild de check boost
-        member = guild.get_member(interaction.user.id)
+        member = guild.get_member(interaction.user.id) # lay member obj
         if not member:
              return await interaction.followup.send("Lỗi: Không thể tìm thấy bạn trên server.", ephemeral=True)
 
         if not is_test_user:
             boost_count = 0
             if member and member.premium_since:
-                # Dem so lan user do boost server
                 boost_count = sum(1 for m in guild.premium_subscribers if m.id == member.id)
 
             if boost_count < min_boosts:
@@ -226,15 +240,16 @@ class EarningRatesView(View):
             return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Role tùy chỉnh của bạn không còn tồn tại. Dữ liệu đã được xóa.", ephemeral=True)
 
         embed = discord.Embed(
-            description=format_text(self.messages.get('CUSTOM_ROLE_MANAGE_PROMPT', "Quan ly role.")),
+            description=format_text(self.messages.get('CUSTOM_ROLE_MANAGE_PROMPT', "Sử dụng menu bên dưới để quản lý role.")),
             color=role_obj.color
         )
         embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.avatar.url)
         embed.add_field(name="Tên Role Hiện Tại", value=f"```{role_obj.name}```", inline=True)
         embed.add_field(name="Màu Sắc", value=f"```{str(role_obj.color)}```", inline=True)
         
-        if self.guild_config.get('EARNING_RATES_IMAGE_URL'):
-            embed.set_image(url=self.guild_config.get('EARNING_RATES_IMAGE_URL'))
+        # dung anh shop chinh cho dong bo
+        if self.guild_config.get('SHOP_EMBED_IMAGE_URL'):
+            embed.set_image(url=self.guild_config.get('SHOP_EMBED_IMAGE_URL'))
             
         view = ManageCustomRoleView(bot=self.bot, guild_config=self.guild_config, role_to_edit=role_obj, guild_id=guild_id)
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
