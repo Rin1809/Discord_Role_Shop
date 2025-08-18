@@ -11,8 +11,6 @@ class PurchaseModal(Modal, title="Mua Role"):
     def __init__(self, bot):
         super().__init__()
         self.bot = bot
-        self.config = bot.config 
-        self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
         self.add_item(TextInput(
             label="Số thứ tự của role", 
             placeholder="Nhập số tương ứng với role bạn muốn mua...",
@@ -22,6 +20,12 @@ class PurchaseModal(Modal, title="Mua Role"):
     async def on_submit(self, interaction: discord.Interaction): 
         await interaction.response.defer(ephemeral=True, thinking=True)
         
+        guild_config = self.bot.guild_configs.get(str(interaction.guild.id))
+        if not guild_config:
+            return await interaction.followup.send("Lỗi: Không tìm thấy config cho server này.", ephemeral=True)
+        
+        embed_color = discord.Color(int(guild_config.get('EMBED_COLOR', '0xff00af'), 16))
+
         try:
             role_number_input = int(self.children[0].value)
             if role_number_input <= 0:
@@ -60,7 +64,7 @@ class PurchaseModal(Modal, title="Mua Role"):
         receipt_embed = discord.Embed(
             title="Biên Lai Giao Dịch Mua Hàng",
             description="Giao dịch của bạn đã được xử lý thành công.",
-            color=self.embed_color,
+            color=embed_color,
             timestamp=discord.utils.utcnow()
         )
         receipt_embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
@@ -72,8 +76,8 @@ class PurchaseModal(Modal, title="Mua Role"):
         receipt_embed.add_field(name="Chi Phí", value=f"```- {price} coin```", inline=True)
         receipt_embed.add_field(name="Số Dư Mới", value=f"```{new_balance} coin```", inline=True)
         
-        if self.config.get('SHOP_EMBED_IMAGE_URL'):
-            receipt_embed.set_image(url=self.config.get('SHOP_EMBED_IMAGE_URL'))
+        if guild_config.get('SHOP_EMBED_IMAGE_URL'):
+            receipt_embed.set_image(url=guild_config.get('SHOP_EMBED_IMAGE_URL'))
 
         receipt_embed.set_footer(text=f"Cảm ơn bạn đã giao dịch tại {interaction.guild.name}", icon_url=self.bot.user.avatar.url)
 
@@ -91,8 +95,6 @@ class SellModal(Modal, title="Bán Lại Role"):
     def __init__(self, bot):
         super().__init__()
         self.bot = bot
-        self.config = bot.config
-        self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
         self.add_item(TextInput(
             label="Số thứ tự của role muốn bán", 
             placeholder="Nhập số tương ứng với role bạn muốn bán...",
@@ -101,6 +103,12 @@ class SellModal(Modal, title="Bán Lại Role"):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True, thinking=True)
+
+        guild_config = self.bot.guild_configs.get(str(interaction.guild.id))
+        if not guild_config:
+            return await interaction.followup.send("Lỗi: Không tìm thấy config cho server này.", ephemeral=True)
+
+        embed_color = discord.Color(int(guild_config.get('EMBED_COLOR', '0xff00af'), 16))
 
         try:
             role_number_input = int(self.children[0].value)
@@ -126,7 +134,7 @@ class SellModal(Modal, title="Bán Lại Role"):
         
         user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
         
-        refund_percentage = self.config.get('SELL_REFUND_PERCENTAGE', 0.65)
+        refund_percentage = guild_config.get('SELL_REFUND_PERCENTAGE', 0.65)
         refund_amount = int(price * refund_percentage)
         new_balance = user_data['balance'] + refund_amount
 
@@ -139,7 +147,7 @@ class SellModal(Modal, title="Bán Lại Role"):
         receipt_embed = discord.Embed(
             title="Biên Lai Giao Dịch Bán Hàng",
             description="Giao dịch của bạn đã được xử lý thành công.",
-            color=self.embed_color,
+            color=embed_color,
             timestamp=discord.utils.utcnow()
         )
         receipt_embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
@@ -151,8 +159,8 @@ class SellModal(Modal, title="Bán Lại Role"):
         receipt_embed.add_field(name="Tiền Nhận Lại", value=f"```+ {refund_amount} coin```", inline=True)
         receipt_embed.add_field(name="Số Dư Mới", value=f"```{new_balance} coin```", inline=True)
         
-        if self.config.get('SHOP_EMBED_IMAGE_URL'):
-            receipt_embed.set_image(url=self.config.get('SHOP_EMBED_IMAGE_URL'))
+        if guild_config.get('SHOP_EMBED_IMAGE_URL'):
+            receipt_embed.set_image(url=guild_config.get('SHOP_EMBED_IMAGE_URL'))
 
         receipt_embed.set_footer(text=f"Cảm ơn bạn đã giao dịch tại {interaction.guild.name}", icon_url=self.bot.user.avatar.url)
 
@@ -167,13 +175,14 @@ class SellModal(Modal, title="Bán Lại Role"):
             )
 
 class CustomRoleModal(Modal):
-    def __init__(self, bot, price=None, role_to_edit: discord.Role = None):
+    def __init__(self, bot, guild_id: int, guild_config, price=None, role_to_edit: discord.Role = None):
         super().__init__(title="Tạo Hoặc Sửa Role Tùy Chỉnh")
         self.bot = bot
-        self.config = bot.config
+        self.guild_id = guild_id # luu guild id
+        self.guild_config = guild_config
         self.price = price
         self.role_to_edit = role_to_edit
-        self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
+        self.embed_color = discord.Color(int(self.guild_config.get('EMBED_COLOR', '0xff00af'), 16))
 
         self.add_item(TextInput(
             label="Tên role bạn muốn",
@@ -200,10 +209,11 @@ class CustomRoleModal(Modal):
         color_int = int(role_color_str.lstrip('#'), 16)
         new_color = discord.Color(color_int)
         
-        guild_id = self.config['GUILD_ID']
-        guild = self.bot.get_guild(guild_id)
+        guild = self.bot.get_guild(self.guild_id) # lay guild tu id da luu
         if not guild:
             return await interaction.followup.send("Lỗi nghiêm trọng: Không tìm thấy server.", ephemeral=True)
+        
+        guild_id = guild.id
 
         user_data = db.get_or_create_user(interaction.user.id, guild_id)
 
@@ -213,7 +223,6 @@ class CustomRoleModal(Modal):
                 await self.role_to_edit.edit(name=role_name, color=new_color, reason=f"Người dùng {interaction.user} tự sửa")
                 db.add_or_update_custom_role(interaction.user.id, guild_id, self.role_to_edit.id, role_name, role_color_str)
                 
-                # fix loi @unknown-role khi gui dm
                 success_msg = f"✅ Đã cập nhật thành công role **{role_name}** của bạn."
                 try:
                     await interaction.user.send(success_msg)
@@ -232,7 +241,7 @@ class CustomRoleModal(Modal):
         new_balance = user_data['balance'] - self.price
 
         try:
-            member = guild.get_member(interaction.user.id)
+            member = guild.get_member(interaction.user.id) # lay member tu guild
             if not member:
                  return await interaction.followup.send("Lỗi: Không tìm thấy bạn trên server.", ephemeral=True)
 
@@ -261,8 +270,8 @@ class CustomRoleModal(Modal):
             receipt_embed.add_field(name="Chi Phí", value=f"```- {self.price} coin```", inline=False)
             receipt_embed.add_field(name="Số Dư Mới", value=f"```{new_balance} coin```", inline=True)
             
-            if self.config.get('SHOP_EMBED_IMAGE_URL'):
-                receipt_embed.set_image(url=self.config.get('SHOP_EMBED_IMAGE_URL'))
+            if self.guild_config.get('SHOP_EMBED_IMAGE_URL'):
+                receipt_embed.set_image(url=self.guild_config.get('SHOP_EMBED_IMAGE_URL'))
 
             receipt_embed.set_footer(text=f"Cảm ơn bạn đã giao dịch tại {interaction.guild.name}", icon_url=self.bot.user.avatar.url)
 

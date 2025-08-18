@@ -1,13 +1,12 @@
 import discord
-from discord import app_commands
 from discord.ext import commands
 from database import database as db
 
 class ShopInterface(commands.Cog):
     def __init__(self, bot: commands.Bot): 
         self.bot = bot
-        self.config = bot.config
-        self.authorized_guilds = self.config['AUTHORIZED_GUILD_IDS']
+        # dung global config cho cac id dc phep
+        self.authorized_guilds = self.bot.global_config['AUTHORIZED_GUILD_IDS']
 
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):

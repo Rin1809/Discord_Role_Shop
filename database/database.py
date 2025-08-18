@@ -1,7 +1,8 @@
 import psycopg2
 from psycopg2 import pool
+from psycopg2.extras import Json
 import logging
-import os
+import json
 from contextlib import contextmanager
 
 db_pool = None
@@ -25,6 +26,7 @@ def init_db(database_url: str):
         db_pool = psycopg2.pool.SimpleConnectionPool(1, 20, dsn=database_url)
         with get_db_connection() as conn:
             with conn.cursor() as cur:
+                # bang users
                 cur.execute('''
                     CREATE TABLE IF NOT EXISTS users (
                         user_id BIGINT NOT NULL,
@@ -36,6 +38,7 @@ def init_db(database_url: str):
                     )
                 ''')
 
+                # bang shop roles
                 cur.execute('''
                     CREATE TABLE IF NOT EXISTS shop_roles (
                         role_id BIGINT PRIMARY KEY,
@@ -44,6 +47,7 @@ def init_db(database_url: str):
                     )
                 ''')
                 
+                # bang custom roles
                 cur.execute('''
                     CREATE TABLE IF NOT EXISTS custom_roles (
                         user_id BIGINT NOT NULL,
@@ -52,6 +56,16 @@ def init_db(database_url: str):
                         role_name TEXT,
                         role_color TEXT,
                         PRIMARY KEY (user_id, guild_id)
+                    )
+                ''')
+
+                # bang config
+                cur.execute('''
+                    CREATE TABLE IF NOT EXISTS guild_configs (
+                        guild_id BIGINT PRIMARY KEY,
+                        shop_channel_id BIGINT,
+                        leaderboard_thread_id BIGINT,
+                        config_data JSONB
                     )
                 ''')
 
@@ -131,3 +145,51 @@ def add_or_update_custom_role(user_id, guild_id, role_id, role_name, role_color)
 
 def delete_custom_role_data(user_id, guild_id):
     execute_query("DELETE FROM custom_roles WHERE user_id = %s AND guild_id = %s", (user_id, guild_id))
+
+# Guild Config Functions
+def get_all_guild_configs():
+    configs = execute_query("SELECT * FROM guild_configs", fetch='all')
+    config_map = {}
+    if configs:
+        for config in configs:
+            guild_id_str = str(config['guild_id'])
+            # gop config
+            combined_config = config.get('config_data', {})
+            if 'shop_channel_id' in config:
+                combined_config['shop_channel_id'] = config['shop_channel_id']
+            if 'leaderboard_thread_id' in config:
+                combined_config['leaderboard_thread_id'] = config['leaderboard_thread_id']
+            config_map[guild_id_str] = combined_config
+    return config_map
+
+def update_guild_config(guild_id, **kwargs):
+    # tach rieng cot chinh va json
+    main_cols = ['shop_channel_id', 'leaderboard_thread_id']
+    main_col_updates = {k: v for k, v in kwargs.items() if k in main_cols}
+    json_data_updates = {k: v for k, v in kwargs.items() if k not in main_cols}
+
+    params = []
+    
+    # update cot chinh
+    if main_col_updates:
+        fields = ', '.join([f'"{key}" = %s' for key in main_col_updates])
+        values = list(main_col_updates.values())
+        params.extend(values)
+        query = f"UPDATE guild_configs SET {fields} WHERE guild_id = %s"
+        params.append(guild_id)
+        execute_query(query, tuple(params))
+
+    # update json
+    if json_data_updates:
+        # lay json hien tai
+        current_config = execute_query("SELECT config_data FROM guild_configs WHERE guild_id = %s", (guild_id,), fetch='one')
+        current_json = current_config['config_data'] if current_config and current_config['config_data'] else {}
+        
+        # merge
+        current_json.update(json_data_updates)
+
+        # update lai
+        execute_query(
+            "UPDATE guild_configs SET config_data = %s WHERE guild_id = %s",
+            (Json(current_json), guild_id)
+        )

@@ -6,8 +6,6 @@ import logging
 class TasksHandler(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.config = bot.config
-        self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
         self.leaderboard_messages = {}
         self.update_leaderboard.start()
 
@@ -16,11 +14,14 @@ class TasksHandler(commands.Cog):
 
     @tasks.loop(minutes=1)
     async def update_leaderboard(self):
-        leaderboards_config = self.config.get('LEADERBOARDS', {})
-        if not leaderboards_config:
+        if not self.bot.guild_configs:
             return
 
-        for guild_id_str, thread_id in leaderboards_config.items():
+        for guild_id_str, guild_config in self.bot.guild_configs.items():
+            thread_id = guild_config.get('leaderboard_thread_id')
+            if not thread_id:
+                continue
+
             try:
                 guild_id = int(guild_id_str)
                 guild = self.bot.get_guild(guild_id)
@@ -36,10 +37,11 @@ class TasksHandler(commands.Cog):
                     logging.error(f"Lay top users tu db that bai cho guild {guild.id}")
                     continue
 
+                embed_color = discord.Color(int(guild_config.get('EMBED_COLOR', '0xff00af'), 16))
                 embed = discord.Embed(
                     title="Bảng Xếp Hạng Đại Gia <:b_34:1343877618340204627>",
                     description="Top 20 thành viên có số dư coin cao nhất server.",
-                    color=self.embed_color,
+                    color=embed_color,
                     timestamp=discord.utils.utcnow()
                 )
 
@@ -62,8 +64,8 @@ class TasksHandler(commands.Cog):
                 if guild.icon:
                     embed.set_thumbnail(url=guild.icon.url)
                 
-                if self.config.get('EARNING_RATES_IMAGE_URL'):
-                    embed.set_image(url=self.config.get('EARNING_RATES_IMAGE_URL'))
+                if guild_config.get('EARNING_RATES_IMAGE_URL'):
+                    embed.set_image(url=guild_config.get('EARNING_RATES_IMAGE_URL'))
 
                 embed.set_footer(text="Cập nhật mỗi 1 phút", icon_url=self.bot.user.avatar.url)
                 
@@ -83,7 +85,10 @@ class TasksHandler(commands.Cog):
                         self.leaderboard_messages[thread_id] = await thread.send(embed=embed)
 
             except discord.NotFound:
-                self.leaderboard_messages[thread_id] = await thread.send(embed=embed)
+                try:
+                    self.leaderboard_messages[thread_id] = await thread.send(embed=embed)
+                except Exception as e:
+                    logging.error(f"Gui tin nhan BXH moi that bai: {e}")
             except Exception as e:
                 logging.error(f"Loi cap nhat BXH cho guild {guild_id_str}: {e}")
                 self.leaderboard_messages.pop(thread_id, None)

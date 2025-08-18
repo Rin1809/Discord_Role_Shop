@@ -9,10 +9,10 @@ from cogs.shop_views import ShopView
 # logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s:%(levelname)s:%(name)s: %(message)s')
 
-# tai config
+# tai config toan cuc
 try:
     with open('config.json', 'r', encoding='utf-8') as f:
-        config = json.load(f)
+        global_config = json.load(f)
 except FileNotFoundError:
     logging.error("Khong tim thay config.json.")
     exit()
@@ -27,10 +27,15 @@ intents.guilds = True
 class ShopBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!@#$", intents=intents) 
-        self.config = config
+        self.global_config = global_config
+        self.guild_configs = {} # cache config
         self.persistent_views_added = False
 
     async def setup_hook(self):
+        # tai config tu db
+        self.guild_configs = db.get_all_guild_configs()
+        logging.info(f"Loaded {len(self.guild_configs)} guild configurations from database.")
+        
         # tai cogs
         cogs_folder = './cogs'
         for filename in os.listdir(cogs_folder):
@@ -58,7 +63,7 @@ class ShopBot(commands.Bot):
         logging.info(f'Logged in as {self.user} (ID: {self.user.id})')
         logging.info('------')
         
-        for guild_id in self.config['AUTHORIZED_GUILD_IDS']:
+        for guild_id in self.global_config['AUTHORIZED_GUILD_IDS']:
             try:
                 guild_obj = discord.Object(id=guild_id)
                 self.tree.copy_global_to(guild=guild_obj)
@@ -68,7 +73,7 @@ class ShopBot(commands.Bot):
                 logging.error(f"Dong bo lenh cho guild {guild_id} that bai: {e}")
 
     async def on_guild_join(self, guild):
-        if guild.id not in self.config['AUTHORIZED_GUILD_IDS']:
+        if guild.id not in self.global_config['AUTHORIZED_GUILD_IDS']:
             logging.warning(f"Bot bi them vao guild la: {guild.name} ({guild.id}). Roi khoi.")
             
             inviter = guild.owner
@@ -82,8 +87,8 @@ class ShopBot(commands.Bot):
                 pass
 
             try:
-                msg = (f"Xin chào, tôi là bot được thiết kế riêng cho các server được chủ sở hữu cho phép. "
-                       f"Tôi không được phép hoạt động ở server khác. Tôi sẽ rời khỏi server của bạn. Cảm ơn!")
+                msg = (f"Xin chào, tớ là bot được thiết kế riêng cho các server Rin cho phép. "
+                       f"Tớ không được phép hoạt động ở server khác. Tớ sẽ rời khỏi server của câu. Cảm ơn!")
                 await inviter.send(msg)
             except discord.Forbidden:
                 logging.warning(f"Khong the DM cho nguoi moi/owner cua {guild.name}.")
@@ -91,12 +96,13 @@ class ShopBot(commands.Bot):
 
 # chay bot
 if __name__ == "__main__":
-    if not config.get('DATABASE_URL'):
+    db_url = global_config.get('DATABASE_URL')
+    if not db_url:
         logging.error("DATABASE_URL khong co trong config.json.")
     else:
-        db.init_db(config['DATABASE_URL'])
+        db.init_db(db_url)
         bot = ShopBot()
         try:
-            bot.run(config['BOT_TOKEN'])
+            bot.run(global_config.get('BOT_TOKEN'))
         except discord.LoginFailure:
             logging.error("Token bot khong hop le. Kiem tra config.json.")

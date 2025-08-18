@@ -6,9 +6,7 @@ import collections
 class CurrencyHandler(commands.Cog):
     def __init__(self, bot: commands.Bot): 
         self.bot = bot
-        self.config = bot.config
-        self.authorized_guilds = self.config['AUTHORIZED_GUILD_IDS']
-        self.rates_config = self.config['CURRENCY_RATES']
+        self.authorized_guilds = self.bot.global_config['AUTHORIZED_GUILD_IDS']
 
     def _get_boost_multiplier(self, member: discord.Member) -> int:
         if member and member.id == 873576591693873252:
@@ -23,15 +21,19 @@ class CurrencyHandler(commands.Cog):
             return boost_count + 1
         return 1
 
-    def _get_rates_for_channel(self, channel: discord.TextChannel):
-        rates = self.rates_config.get('default', {}).copy()
+    def _get_rates_for_channel(self, guild_config: dict, channel: discord.TextChannel):
+        if not guild_config:
+            return {}
+            
+        rates_config = guild_config.get('CURRENCY_RATES', {})
+        rates = rates_config.get('default', {}).copy()
         
         if channel.category_id:
-            category_rates = self.rates_config.get('categories', {}).get(str(channel.category_id))
+            category_rates = rates_config.get('categories', {}).get(str(channel.category_id))
             if category_rates:
                 rates.update(category_rates)
         
-        channel_rates = self.rates_config.get('channels', {}).get(str(channel.id))
+        channel_rates = rates_config.get('channels', {}).get(str(channel.id))
         if channel_rates:
             rates.update(channel_rates)
             
@@ -45,7 +47,11 @@ class CurrencyHandler(commands.Cog):
         if message.guild.id not in self.authorized_guilds:
             return
 
-        current_rates = self._get_rates_for_channel(message.channel)
+        guild_config = self.bot.guild_configs.get(str(message.guild.id))
+        if not guild_config:
+            return
+
+        current_rates = self._get_rates_for_channel(guild_config, message.channel)
         messages_per_coin = current_rates.get('MESSAGES_PER_COIN')
         
         if not messages_per_coin or messages_per_coin <= 0:
@@ -75,11 +81,15 @@ class CurrencyHandler(commands.Cog):
         if not payload.guild_id or payload.guild_id not in self.authorized_guilds or payload.member.bot:
             return
         
+        guild_config = self.bot.guild_configs.get(str(payload.guild_id))
+        if not guild_config:
+            return
+
         channel = self.bot.get_channel(payload.channel_id)
         if not channel:
             return
 
-        current_rates = self._get_rates_for_channel(channel)
+        current_rates = self._get_rates_for_channel(guild_config, channel)
         reactions_per_coin = current_rates.get('REACTIONS_PER_COIN')
 
         if not reactions_per_coin or reactions_per_coin <= 0:

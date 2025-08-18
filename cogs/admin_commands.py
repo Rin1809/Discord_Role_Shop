@@ -3,16 +3,18 @@ from discord import app_commands
 from discord.ext import commands
 from database import database as db
 from .shop_views import ShopView 
-import json
+from utils import format_text 
 
 class AdminCommands(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.config = bot.config
-        self.embed_color = discord.Color(int(self.config['EMBED_COLOR'], 16))
 
     shop = app_commands.Group(name="shop", description="Các lệnh quản lý shop role")
     coin = app_commands.Group(name="coin", description="Các lệnh quản lý tiền tệ")
+
+    async def get_guild_config(self, guild_id: int):
+        # ham helper lay config
+        return self.bot.guild_configs.get(str(guild_id))
 
     @shop.command(name="setup", description="Gửi bảng điều khiển shop và tạo thread bảng xếp hạng.")
     @app_commands.checks.has_permissions(administrator=True) 
@@ -20,33 +22,40 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         
         guild_id_str = str(interaction.guild.id)
-        shop_channels = self.config.get('SHOP_CHANNELS', {})
-        channel_id = shop_channels.get(guild_id_str)
+        guild_config = await self.get_guild_config(interaction.guild.id)
+        
+        if not guild_config:
+            return await interaction.followup.send("⚠️ Cấu hình cho server này chưa được thiết lập trong database.", ephemeral=True)
 
+        channel_id = guild_config.get('shop_channel_id')
         if not channel_id:
-            return await interaction.followup.send(f"⚠️ Kênh shop cho server này chưa được thiết lập trong `config.json`.", ephemeral=True)
+            return await interaction.followup.send(f"⚠️ Kênh shop cho server này chưa được thiết lập trong database.", ephemeral=True)
         
         channel = self.bot.get_channel(int(channel_id))
         if not channel:
             return await interaction.followup.send(f"⚠️ Không tìm thấy kênh với ID `{channel_id}`.", ephemeral=True)
         
+        embed_color = discord.Color(int(guild_config.get('EMBED_COLOR', '0xff00af'), 16))
+        messages = guild_config.get('MESSAGES', {})
+
         embed = discord.Embed(
-            title=self.config['MESSAGES']['SHOP_EMBED_TITLE'],
-            description=self.config['MESSAGES']['SHOP_EMBED_DESCRIPTION'],
-            color=self.embed_color
+            title=messages.get('SHOP_EMBED_TITLE', "Shop Role"),
+            # Su dung format_text o day
+            description=format_text(messages.get('SHOP_EMBED_DESCRIPTION', "Chào mừng")),
+            color=embed_color
         )
         
-        if self.config.get('SHOP_EMBED_THUMBNAIL_URL'):
-            embed.set_thumbnail(url=self.config.get('SHOP_EMBED_THUMBNAIL_URL'))
+        if guild_config.get('SHOP_EMBED_THUMBNAIL_URL'):
+            embed.set_thumbnail(url=guild_config.get('SHOP_EMBED_THUMBNAIL_URL'))
 
-        footer_text = self.config['FOOTER_MESSAGES']['SHOP_PANEL']
+        footer_text = guild_config.get('FOOTER_MESSAGES', {}).get('SHOP_PANEL', 'Bot by Yumemi')
         embed.set_footer(
             text=f"────────────────────\n{footer_text}", 
             icon_url=self.bot.user.avatar.url
         )
         
-        if self.config.get('SHOP_EMBED_IMAGE_URL'):
-            embed.set_image(url=self.config.get('SHOP_EMBED_IMAGE_URL'))
+        if guild_config.get('SHOP_EMBED_IMAGE_URL'):
+            embed.set_image(url=guild_config.get('SHOP_EMBED_IMAGE_URL'))
         
         view = ShopView(bot=self.bot)
 
@@ -54,9 +63,7 @@ class AdminCommands(commands.Cog):
             panel_message = await channel.send(embed=embed, view=view)
             
             # tao thread bxh
-            leaderboard_thread = None
-            leaderboards_config = self.config.get('LEADERBOARDS', {})
-            old_thread_id = leaderboards_config.get(guild_id_str)
+            old_thread_id = guild_config.get('leaderboard_thread_id')
             
             try:
                 # khoa thread cu neu co
@@ -70,19 +77,9 @@ class AdminCommands(commands.Cog):
             leaderboard_thread = await panel_message.create_thread(name="🏆 Bảng Xếp Hạng Coin 🏆")
             await leaderboard_thread.send("Bảng xếp hạng sẽ được cập nhật tại đây...")
             
-            # luu id thread vao config
-            with open('config.json', 'r+', encoding='utf-8') as f:
-                config_data = json.load(f)
-                if 'LEADERBOARDS' not in config_data:
-                    config_data['LEADERBOARDS'] = {}
-                config_data['LEADERBOARDS'][guild_id_str] = leaderboard_thread.id
-                
-                f.seek(0)
-                json.dump(config_data, f, indent=2, ensure_ascii=False)
-                f.truncate()
-            
-            # cap nhat config cho bot
-            self.bot.config['LEADERBOARDS'][guild_id_str] = leaderboard_thread.id
+            # luu id vao db va cache
+            db.update_guild_config(interaction.guild.id, leaderboard_thread_id=leaderboard_thread.id)
+            self.bot.guild_configs[guild_id_str]['leaderboard_thread_id'] = leaderboard_thread.id
             
             # khoi dong lai task
             task_cog = self.bot.get_cog('TasksHandler')
