@@ -8,7 +8,7 @@ class QnASelect(Select):
     def __init__(self, bot, guild_config, guild_id: int):
         self.bot = bot
         self.guild_config = guild_config
-        self.guild_id = guild_id # nho guild id
+        self.guild_id = guild_id 
         self.qna_data = self.guild_config.get("QNA_DATA", [])
         self.embed_color = discord.Color(int(self.guild_config.get('EMBED_COLOR', '0xff00af'), 16))
 
@@ -31,7 +31,7 @@ class QnASelect(Select):
         if not answer_data:
             return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Lỗi: Không tìm thấy câu trả lời cho câu hỏi này.", ephemeral=True)
         
-        guild = self.bot.get_guild(self.guild_id) # lay guild tu id
+        guild = self.bot.get_guild(self.guild_id)
         if not guild:
             return await interaction.followup.send("Lỗi: Không thể tìm thấy server tương ứng.", ephemeral=True)
             
@@ -54,7 +54,7 @@ class ManageCustomRoleActionSelect(Select):
         self.bot = bot
         self.guild_config = guild_config
         self.role_to_edit = role_to_edit
-        self.guild_id = guild_id # luu guild id
+        self.guild_id = guild_id
 
         options = [
             discord.SelectOption(
@@ -88,7 +88,6 @@ class ManageCustomRoleActionSelect(Select):
                 db.delete_custom_role_data(interaction.user.id, self.guild_id)
                 await interaction.followup.send("✅ Đã xóa thành công role tùy chỉnh của bạn.", ephemeral=True)
                 
-                # vo hieu hoa
                 self.disabled = True
                 await interaction.edit_original_response(view=self.view)
 
@@ -105,10 +104,10 @@ class ManageCustomRoleView(View):
 
 class EarningRatesView(View):
     def __init__(self, bot, guild_config, guild_id: int):
-        super().__init__(timeout=None)
+        super().__init__(timeout=300) # view het han sau 5p
         self.bot = bot
         self.guild_config = guild_config
-        self.guild_id = guild_id # nho guild id
+        self.guild_id = guild_id
         self.messages = self.guild_config.get('MESSAGES', {})
         self.embed_color = discord.Color(int(self.guild_config.get('EMBED_COLOR', '0xff00af'), 16))
 
@@ -128,22 +127,17 @@ class EarningRatesView(View):
         if not guild:
             return await interaction.followup.send("Lỗi: Không thể tìm thấy server tương ứng.", ephemeral=True)
 
-        # Sap xep lai logic hien thi
         desc_parts = []
         
-        # 1. Mo ta chung
         if base_desc := self.messages.get('EARNING_RATES_DESC'):
             desc_parts.append(format_text(base_desc))
 
-        # 2. Uu dai Booster
         if booster_info := self.messages.get('BOOSTER_MULTIPLIER_INFO'):
             desc_parts.append(format_text(booster_info))
 
-        # 3. Gom tat ca ty le vao mot khoi
         rates_lines = []
         currency_rates = self.guild_config.get('CURRENCY_RATES', {})
 
-        # Ty le mac dinh
         if default_rates := currency_rates.get('default'):
             rates_lines.append(f"**<:g_chamhoi:1326543673957027961> Tỷ lệ mặc định**")
             if msg_rate := default_rates.get('MESSAGES_PER_COIN'):
@@ -152,7 +146,6 @@ class EarningRatesView(View):
                 rates_lines.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
             rates_lines.append("")
 
-        # Ty le theo danh muc
         if categories_config := currency_rates.get('categories', {}):
             for cat_id, rates in categories_config.items():
                 category = guild.get_channel(int(cat_id))
@@ -164,7 +157,6 @@ class EarningRatesView(View):
                         rates_lines.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
                     rates_lines.append("") 
 
-        # Ty le theo kenh
         if channels_config := currency_rates.get('channels', {}):
             for chan_id, rates in channels_config.items():
                 channel = guild.get_channel(int(chan_id))
@@ -177,10 +169,9 @@ class EarningRatesView(View):
                     rates_lines.append("") 
         
         if rates_lines:
-            if rates_lines[-1] == "": rates_lines.pop() # Xoa dong trang thua
+            if rates_lines[-1] == "": rates_lines.pop()
             desc_parts.append("\n".join(rates_lines))
 
-        # Tao embed cuoi cung
         embed = discord.Embed(
             title=self.messages.get('EARNING_RATES_TITLE', "Tỷ lệ kiếm coin"),
             description="\n\n".join(desc_parts),
@@ -206,7 +197,7 @@ class EarningRatesView(View):
     async def manage_custom_role_callback(self, interaction: discord.Interaction, button: Button):
         await interaction.response.defer(ephemeral=True)
         
-        guild = self.bot.get_guild(self.guild_id) # lay guild tu id
+        guild = self.bot.get_guild(self.guild_id)
         if not guild:
             return await interaction.followup.send("Lỗi: Không thể tìm thấy server tương ứng.", ephemeral=True)
 
@@ -217,7 +208,7 @@ class EarningRatesView(View):
         
         is_test_user = (interaction.user.id == 873576591693873252)
         
-        member = guild.get_member(interaction.user.id) # lay member obj
+        member = guild.get_member(interaction.user.id)
         if not member:
              return await interaction.followup.send("Lỗi: Không thể tìm thấy bạn trên server.", ephemeral=True)
 
@@ -247,7 +238,6 @@ class EarningRatesView(View):
         embed.add_field(name="Tên Role Hiện Tại", value=f"```{role_obj.name}```", inline=True)
         embed.add_field(name="Màu Sắc", value=f"```{str(role_obj.color)}```", inline=True)
         
-        # dung anh shop chinh cho dong bo
         if self.guild_config.get('SHOP_EMBED_IMAGE_URL'):
             embed.set_image(url=self.guild_config.get('SHOP_EMBED_IMAGE_URL'))
             
@@ -311,7 +301,6 @@ class ShopActionSelect(Select):
             if not is_test_user: 
                 boost_count = 0
                 if interaction.user.premium_since:
-                    # Dem so lan user do boost server
                     boost_count = sum(1 for m in interaction.guild.premium_subscribers if m.id == interaction.user.id)
                 if boost_count < min_boosts:
                     msg = messages.get('CUSTOM_ROLE_NO_BOOSTS', "Can {min_boosts} boost").format(min_boosts=min_boosts, boost_count=boost_count)
@@ -323,7 +312,7 @@ class ShopActionSelect(Select):
                 await interaction.response.send_message(msg, ephemeral=True)
                 return
 
-            price = int(custom_role_config.get('PRICE', 1000)) # dam bao gia la so
+            price = int(custom_role_config.get('PRICE', 1000))
             user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
             if user_data['balance'] < price:
                 msg = messages.get('CUSTOM_ROLE_NO_COIN', "Khong du tien.").format(price=price, balance=user_data['balance'])
@@ -380,7 +369,6 @@ class ShopView(View):
         footer_text = guild_config.get('FOOTER_MESSAGES', {}).get('ACCOUNT_INFO', '')
         embed.set_footer(text=f"────────────────────\n{footer_text}", icon_url=self.bot.user.avatar.url)
         
-        # Truyen guild_id vao view de no ghi nho
         view = EarningRatesView(bot=self.bot, guild_config=guild_config, guild_id=interaction.guild.id)
         
         try:
