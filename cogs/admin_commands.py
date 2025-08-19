@@ -46,7 +46,7 @@ class AdminCommands(commands.Cog):
         if guild_config.get('SHOP_EMBED_THUMBNAIL_URL'):
             embed.set_thumbnail(url=guild_config.get('SHOP_EMBED_THUMBNAIL_URL'))
 
-        footer_text = guild_config.get('FOOTER_MESSAGES', {}).get('SHOP_PANEL', 'Bot by Yumemi')
+        footer_text = guild_config.get('FOOTER_MESSAGES', {}).get('SHOP_PANEL', 'Mọi vấn đề xin hãy ping Rin')
         embed.set_footer(
             text=f"────────────────────\n{footer_text}", 
             icon_url=self.bot.user.avatar.url

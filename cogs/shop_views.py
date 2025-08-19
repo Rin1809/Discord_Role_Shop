@@ -6,6 +6,7 @@ import math
 
 ROLES_PER_PAGE = 5
 
+# --- muc nay de lai, ko dung toi nhung de phong sau nay can ---
 class PaginatedRoleListView(View):
     def __init__(self, bot, interaction: discord.Interaction, guild_config: dict, roles: list):
         super().__init__(timeout=180)
@@ -19,7 +20,6 @@ class PaginatedRoleListView(View):
         self.embed_color = discord.Color(int(self.guild_config.get('EMBED_COLOR', '0xff00af'), 16))
 
     async def get_page_embed(self) -> discord.Embed:
-        # tao embed cho trang hien tai
         embed = discord.Embed(
             title=self.messages.get('SHOP_ROLES_TITLE', "Danh sách role"),
             color=self.embed_color
@@ -45,7 +45,6 @@ class PaginatedRoleListView(View):
         return embed
 
     async def update_view(self):
-        # cap nhat nut bam
         self.prev_page.disabled = self.current_page == 0
         self.next_page.disabled = self.current_page >= self.total_pages - 1
         embed = await self.get_page_embed()
@@ -64,6 +63,70 @@ class PaginatedRoleListView(View):
         if self.current_page < self.total_pages - 1:
             self.current_page += 1
             await self.update_view()
+
+# --- select menu moi cho ds role ---
+class RoleListSelect(Select):
+    def __init__(self, bot, guild_config: dict, roles: list):
+        self.bot = bot
+        self.guild_config = guild_config
+        self.roles_data = {str(r['role_id']): r for r in roles} # map de truy cap
+        self.embed_color = discord.Color(int(self.guild_config.get('EMBED_COLOR', '0xff00af'), 16))
+        
+        options = []
+        guild = bot.get_guild(int(list(self.roles_data.values())[0]['guild_id'])) # lay guild tu role dau
+        
+        if guild:
+            for i, role_data in enumerate(roles):
+                role = guild.get_role(role_data['role_id'])
+                if role:
+                    options.append(discord.SelectOption(
+                        label=f"{i+1}. {role.name}",
+                        description=f"Giá: {role_data['price']:,} coin",
+                        value=str(role.id),
+                        emoji="<:g_chamhoi:1326543673957027961>"
+                    ))
+
+        super().__init__(
+            placeholder="Chọn một role để xem chi tiết...", 
+            min_values=1, 
+            max_values=1, 
+            options=options
+        )
+    
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        
+        role_id_str = self.values[0]
+        role_data = self.roles_data.get(role_id_str)
+        role = interaction.guild.get_role(int(role_id_str))
+
+        if not role_data or not role:
+            return await interaction.followup.send("Role này không còn tồn tại.", ephemeral=True)
+        
+        embed = discord.Embed(
+            title=f"Thông tin Role: {role.name}",
+            description=f"Đây là thông tin chi tiết về role bạn đã chọn.",
+            color=role.color if role.color.value != 0 else self.embed_color
+        )
+        if interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+            
+        embed.add_field(name="Role", value=role.mention, inline=True)
+        embed.add_field(name="Giá Mua", value=f"```{role_data['price']:,} coin```", inline=True)
+        
+        refund_percentage = self.guild_config.get('SELL_REFUND_PERCENTAGE', 0.65)
+        refund_amount = int(role_data['price'] * refund_percentage)
+        embed.add_field(name="Bán Lại", value=f"```{refund_amount:,} coin ({refund_percentage:.0%})```", inline=True)
+        
+        embed.set_footer(text=f"Sử dụng nút Mua/Bán và nhập số thứ tự tương ứng để giao dịch.")
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+class RoleListView(View):
+    def __init__(self, bot, guild_config: dict, roles: list):
+        super().__init__(timeout=180)
+        self.add_item(RoleListSelect(bot, guild_config, roles))
+
 
 class QnASelect(Select):
     def __init__(self, bot, guild_config, guild_id: int):
@@ -338,13 +401,13 @@ class ShopActionSelect(Select):
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 return
 
-            # tao view phan trang
-            paginated_view = PaginatedRoleListView(self.bot, interaction, guild_config, shop_roles)
-            initial_embed = await paginated_view.get_page_embed()
-            paginated_view.prev_page.disabled = True
-            paginated_view.next_page.disabled = paginated_view.total_pages <= 1
-            
-            await interaction.followup.send(embed=initial_embed, view=paginated_view, ephemeral=True)
+            # su dung select menu moi
+            view = RoleListView(self.bot, guild_config, shop_roles)
+            await interaction.followup.send(
+                content="<:MenheraFlower:1406458230317645906> Vui lòng chọn một role từ menu bên dưới để xem thông tin chi tiết.",
+                view=view,
+                ephemeral=True
+            )
 
         elif action == "purchase":
             await interaction.response.send_modal(PurchaseModal(bot=self.bot))
@@ -380,6 +443,7 @@ class ShopActionSelect(Select):
                 await interaction.followup.send(msg, ephemeral=True)
                 return
             
+            # loi o day, phai la send_modal
             await interaction.response.send_modal(CustomRoleModal(bot=self.bot, guild_id=interaction.guild.id, guild_config=guild_config, price=price))
 
 class ShopView(View):
@@ -411,7 +475,7 @@ class ShopView(View):
         if interaction.guild.icon:
             embed.set_thumbnail(url=interaction.guild.icon.url)
 
-        balance_str = messages.get('BALANCE_FIELD_VALUE', "{balance} coin").format(balance=user_data['balance'])
+        balance_str = messages.get('BALANCE_FIELD_VALUE', "{balance} coin").format(balance=f"{user_data['balance']:,}") # them format
         embed.add_field(name=f"```{messages.get('BALANCE_FIELD_NAME', 'Số dư')}```", value=balance_str, inline=False)
         
         currency_cog = self.bot.get_cog("CurrencyHandler")
