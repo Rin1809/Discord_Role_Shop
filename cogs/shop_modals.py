@@ -58,6 +58,13 @@ class PurchaseModal(Modal, title="Mua Role"):
         try:
             await interaction.user.add_roles(role_obj, reason="Mua từ shop")
             db.update_user_data(interaction.user.id, interaction.guild.id, balance=new_balance)
+            
+            # log gd
+            db.log_transaction(
+                guild_id=interaction.guild.id, user_id=interaction.user.id,
+                transaction_type='buy_role', item_name=role_obj.name,
+                amount_changed=-price, new_balance=new_balance
+            )
         except discord.Forbidden:
             return await interaction.followup.send("❌ Đã xảy ra lỗi! Tôi không có quyền để gán role này cho bạn. Giao dịch đã bị hủy.", ephemeral=True)
         
@@ -141,6 +148,13 @@ class SellModal(Modal, title="Bán Lại Role"):
         try:
             await interaction.user.remove_roles(role_obj, reason="Bán lại cho shop")
             db.update_user_data(interaction.user.id, interaction.guild.id, balance=new_balance)
+            
+            # log gd
+            db.log_transaction(
+                guild_id=interaction.guild.id, user_id=interaction.user.id,
+                transaction_type='sell_role', item_name=role_obj.name,
+                amount_changed=refund_amount, new_balance=new_balance
+            )
         except discord.Forbidden:
             return await interaction.followup.send("❌ Đã xảy ra lỗi! Tôi không có quyền để xóa role này khỏi bạn. Giao dịch đã bị hủy.", ephemeral=True)
 
@@ -253,6 +267,13 @@ class CustomRoleModal(Modal):
             db.update_user_data(interaction.user.id, guild_id, balance=new_balance)
             db.add_or_update_custom_role(interaction.user.id, guild_id, new_role.id, role_name, role_color_str)
             
+            # log gd
+            db.log_transaction(
+                guild_id=guild_id, user_id=interaction.user.id,
+                transaction_type='create_custom_role', item_name=role_name,
+                amount_changed=-self.price, new_balance=new_balance
+            )
+
             # tao bien lai
             receipt_embed = discord.Embed(
                 title="Biên Lai Tạo Role Tùy Chỉnh",

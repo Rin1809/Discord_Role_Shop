@@ -66,6 +66,20 @@ def init_db(database_url: str):
                         config_data JSONB
                     )
                 ''')
+                
+                # bang ls giao dich
+                cur.execute('''
+                    CREATE TABLE IF NOT EXISTS transactions (
+                        transaction_id SERIAL PRIMARY KEY,
+                        guild_id BIGINT NOT NULL,
+                        user_id BIGINT NOT NULL,
+                        transaction_type TEXT NOT NULL,
+                        item_name TEXT,
+                        amount_changed BIGINT NOT NULL,
+                        new_balance BIGINT NOT NULL,
+                        timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
 
                 conn.commit()
         logging.info("Database PostgreSQL khoi tao thanh cong.")
@@ -191,3 +205,23 @@ def update_guild_config(guild_id, **kwargs):
         """,
         (Json(current_config), guild_id)
     )
+
+# Transaction Log Functions
+def log_transaction(guild_id, user_id, transaction_type, item_name, amount_changed, new_balance):
+    query = """
+    INSERT INTO transactions (guild_id, user_id, transaction_type, item_name, amount_changed, new_balance)
+    VALUES (%s, %s, %s, %s, %s, %s)
+    """
+    execute_query(query, (guild_id, user_id, transaction_type, item_name, amount_changed, new_balance))
+
+def get_guild_transactions(guild_id, limit=50, offset=0):
+    query = "SELECT * FROM transactions WHERE guild_id = %s ORDER BY timestamp DESC LIMIT %s OFFSET %s"
+    return execute_query(query, (guild_id, limit, offset), fetch='all')
+
+def get_user_transactions(guild_id, user_id, limit=50, offset=0):
+    query = "SELECT * FROM transactions WHERE guild_id = %s AND user_id = %s ORDER BY timestamp DESC LIMIT %s OFFSET %s"
+    return execute_query(query, (guild_id, user_id, limit, offset), fetch='all')
+
+def count_guild_transactions(guild_id):
+    result = execute_query("SELECT COUNT(*) as total FROM transactions WHERE guild_id = %s", (guild_id,), fetch='one')
+    return result['total'] if result else 0

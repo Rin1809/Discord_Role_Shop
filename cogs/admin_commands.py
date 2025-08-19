@@ -128,6 +128,17 @@ class AdminCommands(commands.Cog):
         user_data = db.get_or_create_user(member.id, interaction.guild.id)
         new_balance = user_data['balance'] + amount
         db.update_user_data(member.id, interaction.guild.id, balance=new_balance)
+        
+        # log gd
+        db.log_transaction(
+            guild_id=interaction.guild.id,
+            user_id=member.id,
+            transaction_type='admin_give',
+            item_name=f'Admin grant by {interaction.user.name}',
+            amount_changed=amount,
+            new_balance=new_balance
+        )
+        
         await interaction.response.send_message(f"✅ Đã tặng `{amount}` coin cho {member.mention}. Số dư mới: `{new_balance}` coin.", ephemeral=True)
 
     @coin.command(name="set", description="Thiết lập số coin chính xác cho một thành viên.")
@@ -137,7 +148,22 @@ class AdminCommands(commands.Cog):
         if amount < 0:
             return await interaction.response.send_message("⚠️ Lượng coin không thể là số âm.", ephemeral=True)
 
+        user_data = db.get_or_create_user(member.id, interaction.guild.id)
+        old_balance = user_data['balance']
+        amount_changed = amount - old_balance
+        
         db.update_user_data(member.id, interaction.guild.id, balance=amount)
+        
+        # log gd
+        db.log_transaction(
+            guild_id=interaction.guild.id,
+            user_id=member.id,
+            transaction_type='admin_set',
+            item_name=f'Admin set by {interaction.user.name}',
+            amount_changed=amount_changed,
+            new_balance=amount
+        )
+        
         await interaction.response.send_message(f"✅ Đã đặt số dư của {member.mention} thành `{amount}` coin.", ephemeral=True)
 
 async def setup(bot: commands.Bot):
