@@ -361,7 +361,7 @@ class EarningRatesView(View):
             return await interaction.followup.send("Lỗi: Không thể tìm thấy server tương ứng.", ephemeral=True)
 
         guild_id = guild.id
-
+        user_data = db.get_or_create_user(interaction.user.id, guild_id)
         custom_role_config = self.guild_config.get('CUSTOM_ROLE_CONFIG', {})
         min_boosts = custom_role_config.get('MIN_BOOST_COUNT', 2)
         
@@ -372,8 +372,8 @@ class EarningRatesView(View):
              return await interaction.followup.send("Lỗi: Không thể tìm thấy bạn trên server.", ephemeral=True)
 
         if not is_test_user:
-            boost_count = 0
-            if member and member.premium_since:
+            boost_count = user_data.get('fake_boosts', 0)
+            if boost_count == 0 and member.premium_since:
                 boost_count = sum(1 for m in guild.premium_subscribers if m.id == member.id)
 
             if boost_count < min_boosts:
@@ -393,7 +393,7 @@ class EarningRatesView(View):
             description=self.messages.get('CUSTOM_ROLE_MANAGE_PROMPT', "Đây là role tùy chỉnh của bạn. Sử dụng menu bên dưới để Sửa hoặc Xóa."),
             color=role_obj.color
         )
-        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.avatar.url)
+        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
         embed.add_field(name="Tên Role Hiện Tại", value=f"```{role_obj.name}```", inline=True)
         embed.add_field(name="Màu Sắc", value=f"```{str(role_obj.color)}```", inline=True)
         
@@ -459,15 +459,17 @@ class ShopActionSelect(Select):
             await interaction.response.send_modal(SellModal(bot=self.bot))
             
         elif action == "custom_role":
+            user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
             custom_role_config = guild_config.get('CUSTOM_ROLE_CONFIG', {})
             min_boosts = custom_role_config.get('MIN_BOOST_COUNT', 2)
             
             is_test_user = (interaction.user.id == 873576591693873252)
             
             if not is_test_user: 
-                boost_count = 0
-                if interaction.user.premium_since:
+                boost_count = user_data.get('fake_boosts', 0)
+                if boost_count == 0 and interaction.user.premium_since:
                     boost_count = sum(1 for m in interaction.guild.premium_subscribers if m.id == interaction.user.id)
+
                 if boost_count < min_boosts:
                     msg = messages.get('CUSTOM_ROLE_NO_BOOSTS', "Bạn cần có ít nhất {min_boosts} boost để dùng tính năng này.").format(min_boosts=min_boosts, boost_count=boost_count)
                     await interaction.response.send_message(msg, ephemeral=True)
@@ -479,7 +481,6 @@ class ShopActionSelect(Select):
                 return
 
             price = int(custom_role_config.get('PRICE', 1000))
-            user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
             if user_data['balance'] < price:
                 msg = messages.get('CUSTOM_ROLE_NO_COIN', "Bạn không đủ coin! Cần {price} coin nhưng bạn chỉ có {balance}.").format(price=price, balance=user_data['balance'])
                 await interaction.response.send_message(msg, ephemeral=True)
@@ -530,8 +531,12 @@ class ShopView(View):
 
         currency_cog = self.bot.get_cog("CurrencyHandler")
         if currency_cog:
-            multiplier = currency_cog._get_boost_multiplier(interaction.user, guild_config)
-            boost_count = sum(1 for m in interaction.guild.premium_subscribers if m.id == interaction.user.id)
+            multiplier = currency_cog._get_boost_multiplier(interaction.user, guild_config, user_data)
+            
+            boost_count = user_data.get('fake_boosts', 0)
+            if boost_count == 0:
+                 boost_count = sum(1 for m in interaction.guild.premium_subscribers if m.id == interaction.user.id)
+
             if multiplier > 1.0:
                 embed.add_field(
                     name="<a:zgif_BoosterBadgesRoll:1406487084583358474> Ưu Đãi Booster",

@@ -34,6 +34,7 @@ def init_db(database_url: str):
                         balance BIGINT DEFAULT 0,
                         message_count INTEGER DEFAULT 0,
                         reaction_count INTEGER DEFAULT 0,
+                        fake_boosts INTEGER DEFAULT 0,
                         PRIMARY KEY (user_id, guild_id)
                     )
                 ''')
@@ -158,6 +159,9 @@ def get_shop_roles(guild_id):
 # Custom Role Functions
 def get_custom_role(user_id, guild_id):
     return execute_query("SELECT * FROM custom_roles WHERE user_id = %s AND guild_id = %s", (user_id, guild_id), fetch='one')
+
+def get_all_custom_roles_for_guild(guild_id):
+    return execute_query("SELECT user_id, role_id FROM custom_roles WHERE guild_id = %s", (guild_id,), fetch='all')
 
 def add_or_update_custom_role(user_id, guild_id, role_id, role_name, role_color):
     query = """

@@ -8,22 +8,25 @@ class CurrencyHandler(commands.Cog):
         self.bot = bot
         self.authorized_guilds = self.bot.global_config['AUTHORIZED_GUILD_IDS']
 
-    def _get_boost_multiplier(self, member: discord.Member, guild_config: dict) -> float:
-        if not member or not member.premium_since:
-            return 1.0
-
+    def _get_boost_multiplier(self, member: discord.Member, guild_config: dict, user_data: dict) -> float:
         booster_config = guild_config.get('BOOSTER_MULTIPLIER_CONFIG', {})
         if not booster_config.get('ENABLED', False):
             return 1.0
         
-        # dem so boost
-        boost_count = sum(1 for m in member.guild.premium_subscribers if m.id == member.id)
+        boost_count = 0
+        
+        # uu tien boost ao
+        fake_boosts = user_data.get('fake_boosts', 0)
+        if fake_boosts > 0:
+            boost_count = fake_boosts
+        # ko co thi dem boost that
+        elif member and member.premium_since:
+            boost_count = sum(1 for m in member.guild.premium_subscribers if m.id == member.id)
         
         if boost_count > 0:
             base_multiplier = booster_config.get('BASE_MULTIPLIER', 2.0)
             per_boost_addition = booster_config.get('PER_BOOST_ADDITION', 0.5)
             
-            # tinh toan he so
             final_multiplier = base_multiplier + ((boost_count - 1) * per_boost_addition)
             return final_multiplier
 
@@ -73,15 +76,15 @@ class CurrencyHandler(commands.Cog):
         remaining_messages = new_message_count % messages_per_coin
         
         if coins_to_add > 0:
-            multiplier = self._get_boost_multiplier(message.author, guild_config)
-            final_coins_to_add = int(coins_to_add * multiplier) # lam tron xuong
+            multiplier = self._get_boost_multiplier(message.author, guild_config, user_data)
+            final_coins_to_add = int(coins_to_add * multiplier) 
 
             if final_coins_to_add > 0:
                 new_balance = user_data['balance'] + final_coins_to_add
                 db.update_user_data(message.author.id, message.guild.id, 
                                     balance=new_balance, 
                                     message_count=remaining_messages)
-            else: # truong hop he so nhan lam tron ve 0
+            else: 
                 db.update_user_data(message.author.id, message.guild.id, 
                                     message_count=new_message_count)
         else:
@@ -113,7 +116,7 @@ class CurrencyHandler(commands.Cog):
         remaining_reactions = new_reaction_count % reactions_per_coin
 
         if coins_to_add > 0:
-            multiplier = self._get_boost_multiplier(payload.member, guild_config)
+            multiplier = self._get_boost_multiplier(payload.member, guild_config, user_data)
             final_coins_to_add = int(coins_to_add * multiplier)
 
             if final_coins_to_add > 0:
