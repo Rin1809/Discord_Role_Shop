@@ -37,7 +37,7 @@ class TasksHandler(commands.Cog):
                     logging.error(f"Lay top users tu db that bai cho guild {guild.id}")
                     continue
 
-                embed_color = discord.Color(int(guild_config.get('EMBED_COLOR', '0xff00af'), 16))
+                embed_color = discord.Color(int(str(guild_config.get('EMBED_COLOR', '#ff00af')).lstrip('#'), 16))
                 embed = discord.Embed(
                     title="Bảng Xếp Hạng Đại Gia <:b_34:1343877618340204627>",
                     description="Top 20 thành viên có số dư coin cao nhất server.",
@@ -48,7 +48,7 @@ class TasksHandler(commands.Cog):
                 leaderboard_lines = []
                 for i, user_data in enumerate(top_users):
                     member = guild.get_member(user_data['user_id'])
-                    display_name = member.mention if member else f"User da roi server"
+                    display_name = member.mention if member else f"User đã rời server"
                     
                     emoji = "🔹"
                     if i == 0: emoji = "🥇"
@@ -73,7 +73,6 @@ class TasksHandler(commands.Cog):
                 if message:
                     await message.edit(content=None, embed=embed)
                 else:
-                    # tim tin nhan cu
                     found = False
                     async for msg in thread.history(limit=5):
                         if msg.author.id == self.bot.user.id:

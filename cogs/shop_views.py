@@ -104,7 +104,7 @@ class ManageCustomRoleView(View):
 
 class EarningRatesView(View):
     def __init__(self, bot, guild_config, guild_id: int):
-        super().__init__(timeout=300) # view het han sau 5p
+        super().__init__(timeout=300)
         self.bot = bot
         self.guild_config = guild_config
         self.guild_id = guild_id
@@ -218,12 +218,12 @@ class EarningRatesView(View):
                 boost_count = sum(1 for m in guild.premium_subscribers if m.id == member.id)
 
             if boost_count < min_boosts:
-                msg = self.messages.get('CUSTOM_ROLE_NO_BOOSTS', "Can {min_boosts} boost.").format(min_boosts=min_boosts, boost_count=boost_count)
+                msg = self.messages.get('CUSTOM_ROLE_NO_BOOSTS', "Bạn cần có ít nhất {min_boosts} boost để dùng tính năng này.").format(min_boosts=min_boosts, boost_count=boost_count)
                 return await interaction.followup.send(msg, ephemeral=True)
         
         custom_role_data = db.get_custom_role(interaction.user.id, guild_id)
         if not custom_role_data:
-            return await interaction.followup.send(self.messages.get('CUSTOM_ROLE_NOT_OWNED', "Ban chua co role."), ephemeral=True)
+            return await interaction.followup.send(self.messages.get('CUSTOM_ROLE_NOT_OWNED', "Bạn chưa tạo role tùy chỉnh nào cả."), ephemeral=True)
 
         role_obj = guild.get_role(custom_role_data['role_id'])
         if not role_obj:
@@ -231,7 +231,7 @@ class EarningRatesView(View):
             return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Role tùy chỉnh của bạn không còn tồn tại. Dữ liệu đã được xóa.", ephemeral=True)
 
         embed = discord.Embed(
-            description=format_text(self.messages.get('CUSTOM_ROLE_MANAGE_PROMPT', "Sử dụng menu bên dưới để quản lý role.")),
+            description=format_text(self.messages.get('CUSTOM_ROLE_MANAGE_PROMPT', "Đây là role tùy chỉnh của bạn. Sử dụng menu bên dưới để Sửa hoặc Xóa.")),
             color=role_obj.color
         )
         embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.avatar.url)
@@ -293,6 +293,7 @@ class ShopActionSelect(Select):
             await interaction.response.send_modal(SellModal(bot=self.bot))
             
         elif action == "custom_role":
+            await interaction.response.defer(ephemeral=True)
             custom_role_config = guild_config.get('CUSTOM_ROLE_CONFIG', {})
             min_boosts = custom_role_config.get('MIN_BOOST_COUNT', 2)
             
@@ -303,20 +304,20 @@ class ShopActionSelect(Select):
                 if interaction.user.premium_since:
                     boost_count = sum(1 for m in interaction.guild.premium_subscribers if m.id == interaction.user.id)
                 if boost_count < min_boosts:
-                    msg = messages.get('CUSTOM_ROLE_NO_BOOSTS', "Can {min_boosts} boost").format(min_boosts=min_boosts, boost_count=boost_count)
-                    await interaction.response.send_message(msg, ephemeral=True)
+                    msg = messages.get('CUSTOM_ROLE_NO_BOOSTS', "Bạn cần có ít nhất {min_boosts} boost để dùng tính năng này.").format(min_boosts=min_boosts, boost_count=boost_count)
+                    await interaction.followup.send(msg, ephemeral=True)
                     return
 
             if db.get_custom_role(interaction.user.id, interaction.guild.id):
-                msg = messages.get('CUSTOM_ROLE_ALREADY_OWNED', "Da co role roi.")
-                await interaction.response.send_message(msg, ephemeral=True)
+                msg = messages.get('CUSTOM_ROLE_ALREADY_OWNED', "Bạn đã có một role tùy chỉnh rồi. Hãy dùng nút 'Quản lý Role' để chỉnh sửa.")
+                await interaction.followup.send(msg, ephemeral=True)
                 return
 
             price = int(custom_role_config.get('PRICE', 1000))
             user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
             if user_data['balance'] < price:
-                msg = messages.get('CUSTOM_ROLE_NO_COIN', "Khong du tien.").format(price=price, balance=user_data['balance'])
-                await interaction.response.send_message(msg, ephemeral=True)
+                msg = messages.get('CUSTOM_ROLE_NO_COIN', "Bạn không đủ coin! Cần {price} coin nhưng bạn chỉ có {balance}.").format(price=price, balance=user_data['balance'])
+                await interaction.followup.send(msg, ephemeral=True)
                 return
             
             await interaction.response.send_modal(CustomRoleModal(bot=self.bot, guild_id=interaction.guild.id, guild_config=guild_config, price=price))
