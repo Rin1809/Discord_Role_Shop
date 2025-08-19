@@ -416,11 +416,12 @@ class ShopView(View):
         
         currency_cog = self.bot.get_cog("CurrencyHandler")
         if currency_cog:
-            multiplier = currency_cog._get_boost_multiplier(interaction.user)
-            if multiplier > 1:
+            multiplier = currency_cog._get_boost_multiplier(interaction.user, guild_config)
+            boost_count = sum(1 for m in interaction.guild.premium_subscribers if m.id == interaction.user.id)
+            if multiplier > 1.0:
                 embed.add_field(
                     name="<a:zgif_BoosterBadgesRoll:1406487084583358474> Ưu Đãi Booster",
-                    value=f"```diff\n+ Bạn đang nhận được x{multiplier} coin từ mọi hoạt động!\n```",
+                    value=f"```diff\n+ Bạn đang nhận x{multiplier:.1f} coin từ {boost_count} boost!\n```",
                     inline=False
                 )
 
