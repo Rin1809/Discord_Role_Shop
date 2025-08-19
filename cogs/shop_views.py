@@ -6,7 +6,6 @@ import math
 
 ROLES_PER_PAGE = 5
 
-# --- muc nay de lai, ko dung toi nhung de phong sau nay can ---
 class PaginatedRoleListView(View):
     def __init__(self, bot, interaction: discord.Interaction, guild_config: dict, roles: list):
         super().__init__(timeout=180)
@@ -20,6 +19,7 @@ class PaginatedRoleListView(View):
         self.embed_color = discord.Color(int(self.guild_config.get('EMBED_COLOR', '0xff00af'), 16))
 
     async def get_page_embed(self) -> discord.Embed:
+        # tao embed cho trang
         embed = discord.Embed(
             title=self.messages.get('SHOP_ROLES_TITLE', "Danh sách role"),
             color=self.embed_color
@@ -45,6 +45,7 @@ class PaginatedRoleListView(View):
         return embed
 
     async def update_view(self):
+        # cap nhat nut
         self.prev_page.disabled = self.current_page == 0
         self.next_page.disabled = self.current_page >= self.total_pages - 1
         embed = await self.get_page_embed()
@@ -69,11 +70,11 @@ class RoleListSelect(Select):
     def __init__(self, bot, guild_config: dict, roles: list):
         self.bot = bot
         self.guild_config = guild_config
-        self.roles_data = {str(r['role_id']): r for r in roles} # map de truy cap
+        self.roles_data = {str(r['role_id']): r for r in roles}
         self.embed_color = discord.Color(int(self.guild_config.get('EMBED_COLOR', '0xff00af'), 16))
         
         options = []
-        guild = bot.get_guild(int(list(self.roles_data.values())[0]['guild_id'])) # lay guild tu role dau
+        guild = bot.get_guild(int(list(self.roles_data.values())[0]['guild_id']))
         
         if guild:
             for i, role_data in enumerate(roles):
@@ -401,13 +402,22 @@ class ShopActionSelect(Select):
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 return
 
-            # su dung select menu moi
-            view = RoleListView(self.bot, guild_config, shop_roles)
-            await interaction.followup.send(
-                content="<:MenheraFlower:1406458230317645906> Vui lòng chọn một role từ menu bên dưới để xem thông tin chi tiết.",
-                view=view,
-                ephemeral=True
-            )
+            # ktra kieu hien thi
+            display_style = guild_config.get('SHOP_DISPLAY_STYLE', 'select_menu')
+
+            if display_style == 'pagination':
+                paginated_view = PaginatedRoleListView(self.bot, interaction, guild_config, shop_roles)
+                initial_embed = await paginated_view.get_page_embed()
+                paginated_view.prev_page.disabled = True
+                paginated_view.next_page.disabled = paginated_view.total_pages <= 1
+                await interaction.followup.send(embed=initial_embed, view=paginated_view, ephemeral=True)
+            else: # mac dinh la select_menu
+                view = RoleListView(self.bot, guild_config, shop_roles)
+                await interaction.followup.send(
+                    content="<:MenheraFlower:1406458230317645906> Vui lòng chọn một role từ menu bên dưới để xem thông tin chi tiết.",
+                    view=view,
+                    ephemeral=True
+                )
 
         elif action == "purchase":
             await interaction.response.send_modal(PurchaseModal(bot=self.bot))
@@ -443,7 +453,6 @@ class ShopActionSelect(Select):
                 await interaction.followup.send(msg, ephemeral=True)
                 return
             
-            # loi o day, phai la send_modal
             await interaction.response.send_modal(CustomRoleModal(bot=self.bot, guild_id=interaction.guild.id, guild_config=guild_config, price=price))
 
 class ShopView(View):
@@ -475,7 +484,7 @@ class ShopView(View):
         if interaction.guild.icon:
             embed.set_thumbnail(url=interaction.guild.icon.url)
 
-        balance_str = messages.get('BALANCE_FIELD_VALUE', "{balance} coin").format(balance=f"{user_data['balance']:,}") # them format
+        balance_str = messages.get('BALANCE_FIELD_VALUE', "{balance} coin").format(balance=f"{user_data['balance']:,}")
         embed.add_field(name=f"```{messages.get('BALANCE_FIELD_NAME', 'Số dư')}```", value=balance_str, inline=False)
         
         currency_cog = self.bot.get_cog("CurrencyHandler")
