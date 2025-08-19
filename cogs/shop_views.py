@@ -2,7 +2,6 @@ import discord
 from discord.ui import Button, View, Select
 from database import database as db
 from .shop_modals import PurchaseModal, SellModal, CustomRoleModal
-from utils import format_text
 
 class QnASelect(Select):
     def __init__(self, bot, guild_config, guild_id: int):
@@ -37,7 +36,7 @@ class QnASelect(Select):
             
         embed = discord.Embed(
             title=f"{answer_data.get('emoji', '❓')} {answer_data.get('answer_title', selected_label)}",
-            description=format_text(answer_data.get("answer_description", "Chưa có câu trả lời.")),
+            description=answer_data.get("answer_description", "Chưa có câu trả lời."),
             color=self.embed_color
         )
         embed.set_footer(text=guild.name, icon_url=guild.icon.url if guild.icon else None)
@@ -130,10 +129,10 @@ class EarningRatesView(View):
         desc_parts = []
         
         if base_desc := self.messages.get('EARNING_RATES_DESC'):
-            desc_parts.append(format_text(base_desc))
+            desc_parts.append(base_desc)
 
         if booster_info := self.messages.get('BOOSTER_MULTIPLIER_INFO'):
-            desc_parts.append(format_text(booster_info))
+            desc_parts.append(booster_info)
 
         rates_lines = []
         currency_rates = self.guild_config.get('CURRENCY_RATES', {})
@@ -231,7 +230,7 @@ class EarningRatesView(View):
             return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Role tùy chỉnh của bạn không còn tồn tại. Dữ liệu đã được xóa.", ephemeral=True)
 
         embed = discord.Embed(
-            description=format_text(self.messages.get('CUSTOM_ROLE_MANAGE_PROMPT', "Đây là role tùy chỉnh của bạn. Sử dụng menu bên dưới để Sửa hoặc Xóa.")),
+            description=self.messages.get('CUSTOM_ROLE_MANAGE_PROMPT', "Đây là role tùy chỉnh của bạn. Sử dụng menu bên dưới để Sửa hoặc Xóa."),
             color=role_obj.color
         )
         embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.avatar.url)
@@ -280,7 +279,9 @@ class ShopActionSelect(Select):
                     role = interaction.guild.get_role(role_data['role_id'])
                     if role:
                         role_list_str += f"### {i+1}. {role.mention}\n> **Giá:** `{role_data['price']}` 🪙\n"
-                embed.description = format_text(messages.get('SHOP_ROLES_DESC', '')) + "\n\n" + role_list_str
+                
+                base_desc = messages.get('SHOP_ROLES_DESC', '')
+                embed.description = (base_desc + "\n\n" + role_list_str) if base_desc else role_list_str
             
             footer_text = guild_config.get('FOOTER_MESSAGES', {}).get('ROLE_LIST', '')
             embed.set_footer(text=f"────────────────────\n{footer_text}", icon_url=self.bot.user.avatar.url)
@@ -343,7 +344,7 @@ class ShopView(View):
 
         embed = discord.Embed(
             title=messages.get('ACCOUNT_INFO_TITLE', "Tài khoản"),
-            description=format_text(messages.get('ACCOUNT_INFO_DESC', '')),
+            description=messages.get('ACCOUNT_INFO_DESC', ''),
             color=embed_color
         )
         embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)

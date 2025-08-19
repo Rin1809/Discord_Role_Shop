@@ -3,7 +3,6 @@ from discord import app_commands
 from discord.ext import commands
 from database import database as db
 from .shop_views import ShopView 
-from utils import format_text 
 
 class AdminCommands(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -13,7 +12,7 @@ class AdminCommands(commands.Cog):
     coin = app_commands.Group(name="coin", description="Các lệnh quản lý tiền tệ")
 
     async def get_guild_config(self, guild_id: int):
-        # ham helper lay config
+        # helper lay config
         return self.bot.guild_configs.get(str(guild_id))
 
     @shop.command(name="setup", description="Gửi bảng điều khiển shop và tạo thread bảng xếp hạng.")
@@ -40,8 +39,7 @@ class AdminCommands(commands.Cog):
 
         embed = discord.Embed(
             title=messages.get('SHOP_EMBED_TITLE', "Shop Role"),
-            # Su dung format_text o day
-            description=format_text(messages.get('SHOP_EMBED_DESCRIPTION', "Chào mừng")),
+            description=messages.get('SHOP_EMBED_DESCRIPTION', "Chào mừng"),
             color=embed_color
         )
         
@@ -66,7 +64,7 @@ class AdminCommands(commands.Cog):
             old_thread_id = guild_config.get('leaderboard_thread_id')
             
             try:
-                # khoa thread cu neu co
+                # khoa thread cu
                 if old_thread_id:
                     old_thread = self.bot.get_channel(int(old_thread_id))
                     if old_thread:
@@ -79,10 +77,10 @@ class AdminCommands(commands.Cog):
             
             # luu id vao db
             db.update_guild_config(guild_id, leaderboard_thread_id=leaderboard_thread.id)
-            # reload config de cache cap nhat
+            # reload config
             await self.bot.reload_guild_config(guild_id)
             
-            # khoi dong lai task
+            # restart task
             task_cog = self.bot.get_cog('TasksHandler')
             if task_cog:
                 task_cog.update_leaderboard.restart()
