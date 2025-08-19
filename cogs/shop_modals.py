@@ -3,7 +3,6 @@ from discord.ui import Modal, TextInput
 from database import database as db
 import re
 
-# ham check hex
 def is_valid_hex_color(s):
     return re.match(r'^#?([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$', s) is not None
 
@@ -59,7 +58,6 @@ class PurchaseModal(Modal, title="Mua Role"):
             await interaction.user.add_roles(role_obj, reason="Mua từ shop")
             db.update_user_data(interaction.user.id, interaction.guild.id, balance=new_balance)
             
-            # log gd
             db.log_transaction(
                 guild_id=interaction.guild.id, user_id=interaction.user.id,
                 transaction_type='buy_role', item_name=role_obj.name,
@@ -149,7 +147,6 @@ class SellModal(Modal, title="Bán Lại Role"):
             await interaction.user.remove_roles(role_obj, reason="Bán lại cho shop")
             db.update_user_data(interaction.user.id, interaction.guild.id, balance=new_balance)
             
-            # log gd
             db.log_transaction(
                 guild_id=interaction.guild.id, user_id=interaction.user.id,
                 transaction_type='sell_role', item_name=role_obj.name,
@@ -192,7 +189,7 @@ class CustomRoleModal(Modal):
     def __init__(self, bot, guild_id: int, guild_config, price=None, role_to_edit: discord.Role = None):
         super().__init__(title="Tạo Hoặc Sửa Role Tùy Chỉnh")
         self.bot = bot
-        self.guild_id = guild_id # luu guild id
+        self.guild_id = guild_id
         self.guild_config = guild_config
         self.price = price
         self.role_to_edit = role_to_edit
@@ -223,7 +220,7 @@ class CustomRoleModal(Modal):
         color_int = int(role_color_str.lstrip('#'), 16)
         new_color = discord.Color(color_int)
         
-        guild = self.bot.get_guild(self.guild_id) # lay guild tu id da luu
+        guild = self.bot.get_guild(self.guild_id)
         if not guild:
             return await interaction.followup.send("Lỗi nghiêm trọng: Không tìm thấy server.", ephemeral=True)
         
@@ -231,7 +228,6 @@ class CustomRoleModal(Modal):
 
         user_data = db.get_or_create_user(interaction.user.id, guild_id)
 
-        # xu ly sua role
         if self.role_to_edit:
             try:
                 await self.role_to_edit.edit(name=role_name, color=new_color, reason=f"Người dùng {interaction.user} tự sửa")
@@ -248,33 +244,39 @@ class CustomRoleModal(Modal):
                 await interaction.followup.send("❌ Tôi không có quyền để chỉnh sửa role này.", ephemeral=True)
             return
 
-        # xu ly tao role moi
         if user_data['balance'] < self.price:
             return await interaction.followup.send(f"Bạn không đủ coin! Cần **{self.price} coin** nhưng bạn chỉ có **{user_data['balance']}**.", ephemeral=True)
         
         new_balance = user_data['balance'] - self.price
 
         try:
-            member = guild.get_member(interaction.user.id) # lay member tu guild
+            member = guild.get_member(interaction.user.id)
             if not member:
                  return await interaction.followup.send("Lỗi: Không tìm thấy bạn trên server.", ephemeral=True)
 
             new_role = await guild.create_role(
                 name=role_name, color=new_color, reason=f"Role tùy chỉnh của {interaction.user.name}"
             )
+            
+            try: # tu dong day role len
+                bot_member = guild.me
+                if bot_member and bot_member.top_role:
+                    target_position = bot_member.top_role.position
+                    await new_role.edit(position=target_position, reason="Tu dong dua role len cao")
+            except Exception:
+                pass
+
             await member.add_roles(new_role)
             
             db.update_user_data(interaction.user.id, guild_id, balance=new_balance)
             db.add_or_update_custom_role(interaction.user.id, guild_id, new_role.id, role_name, role_color_str)
             
-            # log gd
             db.log_transaction(
                 guild_id=guild_id, user_id=interaction.user.id,
                 transaction_type='create_custom_role', item_name=role_name,
                 amount_changed=-self.price, new_balance=new_balance
             )
 
-            # tao bien lai
             receipt_embed = discord.Embed(
                 title="Biên Lai Tạo Role Tùy Chỉnh",
                 description="Role tùy chỉnh của bạn đã được tạo và gán thành công.",
