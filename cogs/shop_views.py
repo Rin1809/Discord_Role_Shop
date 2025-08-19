@@ -19,7 +19,6 @@ class PaginatedRoleListView(View):
         self.embed_color = discord.Color(int(self.guild_config.get('EMBED_COLOR', '0xff00af'), 16))
 
     async def get_page_embed(self) -> discord.Embed:
-        # tao embed cho trang
         embed = discord.Embed(
             title=self.messages.get('SHOP_ROLES_TITLE', "Danh sách role"),
             color=self.embed_color
@@ -45,7 +44,6 @@ class PaginatedRoleListView(View):
         return embed
 
     async def update_view(self):
-        # cap nhat nut
         self.prev_page.disabled = self.current_page == 0
         self.next_page.disabled = self.current_page >= self.total_pages - 1
         embed = await self.get_page_embed()
@@ -65,7 +63,6 @@ class PaginatedRoleListView(View):
             self.current_page += 1
             await self.update_view()
 
-# --- select menu moi cho ds role ---
 class RoleListSelect(Select):
     def __init__(self, bot, guild_config: dict, roles: list):
         self.bot = bot
@@ -229,7 +226,7 @@ class ManageCustomRoleView(View):
 
 class EarningRatesView(View):
     def __init__(self, bot, guild_config, guild_id: int):
-        super().__init__(timeout=300)
+        super().__init__(timeout=300) # timeout 5p
         self.bot = bot
         self.guild_config = guild_config
         self.guild_id = guild_id
@@ -402,7 +399,6 @@ class ShopActionSelect(Select):
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 return
 
-            # ktra kieu hien thi
             display_style = guild_config.get('SHOP_DISPLAY_STYLE', 'select_menu')
 
             if display_style == 'pagination':
@@ -411,7 +407,7 @@ class ShopActionSelect(Select):
                 paginated_view.prev_page.disabled = True
                 paginated_view.next_page.disabled = paginated_view.total_pages <= 1
                 await interaction.followup.send(embed=initial_embed, view=paginated_view, ephemeral=True)
-            else: # mac dinh la select_menu
+            else: 
                 view = RoleListView(self.bot, guild_config, shop_roles)
                 await interaction.followup.send(
                     content="<:MenheraFlower:1406458230317645906> Vui lòng chọn một role từ menu bên dưới để xem thông tin chi tiết.",
