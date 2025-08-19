@@ -94,7 +94,7 @@ def execute_query(query, params=(), fetch=None):
 def get_or_create_user(user_id, guild_id):
     user = execute_query("SELECT * FROM users WHERE user_id = %s AND guild_id = %s", (user_id, guild_id), fetch='one')
     if not user:
-        execute_query("INSERT INTO users (user_id, guild_id) VALUES (%s, %s)", (user_id, guild_id))
+        execute_query("INSERT INTO users (user_id, guild_id) VALUES (%s, %s) ON CONFLICT(user_id, guild_id) DO NOTHING", (user_id, guild_id))
         user = execute_query("SELECT * FROM users WHERE user_id = %s AND guild_id = %s", (user_id, guild_id), fetch='one')
     return user
 
@@ -108,6 +108,22 @@ def update_user_data(user_id, guild_id, **kwargs):
 def get_top_users(guild_id, limit=20):
     query = "SELECT user_id, balance FROM users WHERE guild_id = %s ORDER BY balance DESC LIMIT %s"
     return execute_query(query, (guild_id, limit), fetch='all')
+
+def get_guild_users(guild_id):
+    # lay all user trong guild tu db
+    query = "SELECT user_id, balance FROM users WHERE guild_id = %s ORDER BY user_id"
+    return execute_query(query, (guild_id,), fetch='all')
+
+def get_user_profile(user_id, guild_id):
+    # lay profile chi tiet
+    query = """
+    SELECT u.*, cr.role_id, cr.role_name, cr.role_color
+    FROM users u
+    LEFT JOIN custom_roles cr ON u.user_id = cr.user_id AND u.guild_id = cr.guild_id
+    WHERE u.user_id = %s AND u.guild_id = %s;
+    """
+    return execute_query(query, (user_id, guild_id), fetch='one')
+
 
 # Shop Role Functions
 def add_role_to_shop(role_id, guild_id, price):
