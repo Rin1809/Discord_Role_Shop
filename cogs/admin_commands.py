@@ -76,7 +76,7 @@ class AdminCommands(commands.Cog):
             await leaderboard_thread.send("Bảng xếp hạng sẽ được cập nhật tại đây...")
             
             # luu id vao db
-            db.update_guild_config(guild_id, leaderboard_thread_id=leaderboard_thread.id)
+            db.update_guild_config(guild_id, updates={'leaderboard_thread_id': leaderboard_thread.id})
             # reload config
             await self.bot.reload_guild_config(guild_id)
             

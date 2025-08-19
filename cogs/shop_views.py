@@ -2,6 +2,68 @@ import discord
 from discord.ui import Button, View, Select
 from database import database as db
 from .shop_modals import PurchaseModal, SellModal, CustomRoleModal
+import math
+
+ROLES_PER_PAGE = 5
+
+class PaginatedRoleListView(View):
+    def __init__(self, bot, interaction: discord.Interaction, guild_config: dict, roles: list):
+        super().__init__(timeout=180)
+        self.bot = bot
+        self.interaction = interaction
+        self.guild_config = guild_config
+        self.roles = roles
+        self.current_page = 0
+        self.total_pages = math.ceil(len(self.roles) / ROLES_PER_PAGE)
+        self.messages = self.guild_config.get('MESSAGES', {})
+        self.embed_color = discord.Color(int(self.guild_config.get('EMBED_COLOR', '0xff00af'), 16))
+
+    async def get_page_embed(self) -> discord.Embed:
+        # tao embed cho trang hien tai
+        embed = discord.Embed(
+            title=self.messages.get('SHOP_ROLES_TITLE', "Danh sách role"),
+            color=self.embed_color
+        )
+        start_index = self.current_page * ROLES_PER_PAGE
+        end_index = start_index + ROLES_PER_PAGE
+        roles_on_page = self.roles[start_index:end_index]
+
+        if not roles_on_page:
+            embed.description = self.messages.get('SHOP_ROLES_EMPTY', "Shop trống.")
+        else:
+            role_list_str = ""
+            for i, role_data in enumerate(roles_on_page):
+                role = self.interaction.guild.get_role(role_data['role_id'])
+                if role:
+                    role_list_str += f"### {start_index + i + 1}. {role.mention}\n> **Giá:** `{role_data['price']}` 🪙\n"
+            
+            base_desc = self.messages.get('SHOP_ROLES_DESC', '')
+            embed.description = (base_desc + "\n\n" + role_list_str) if base_desc else role_list_str
+        
+        footer_text = f"Trang {self.current_page + 1}/{self.total_pages}"
+        embed.set_footer(text=footer_text, icon_url=self.bot.user.avatar.url)
+        return embed
+
+    async def update_view(self):
+        # cap nhat nut bam
+        self.prev_page.disabled = self.current_page == 0
+        self.next_page.disabled = self.current_page >= self.total_pages - 1
+        embed = await self.get_page_embed()
+        await self.interaction.edit_original_response(embed=embed, view=self)
+
+    @discord.ui.button(label="Trước", style=discord.ButtonStyle.secondary, emoji="⬅️", custom_id="prev_page")
+    async def prev_page(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.defer()
+        if self.current_page > 0:
+            self.current_page -= 1
+            await self.update_view()
+
+    @discord.ui.button(label="Sau", style=discord.ButtonStyle.secondary, emoji="➡️", custom_id="next_page")
+    async def next_page(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.defer()
+        if self.current_page < self.total_pages - 1:
+            self.current_page += 1
+            await self.update_view()
 
 class QnASelect(Select):
     def __init__(self, bot, guild_config, guild_id: int):
@@ -261,31 +323,28 @@ class ShopActionSelect(Select):
             return await interaction.response.send_message("Lỗi: Không tìm thấy config cho server.", ephemeral=True, delete_after=10)
         
         messages = guild_config.get('MESSAGES', {})
-        embed_color = discord.Color(int(guild_config.get('EMBED_COLOR', '0xff00af'), 16))
         action = self.values[0]
 
         if action == "list_roles":
             await interaction.response.defer(ephemeral=True)
             shop_roles = db.get_shop_roles(interaction.guild.id)
-            embed = discord.Embed(
-                title=messages.get('SHOP_ROLES_TITLE', "Danh sách role"),
-                color=embed_color
-            )
-            if not shop_roles:
-                embed.description = messages.get('SHOP_ROLES_EMPTY', "Shop trống.")
-            else:
-                role_list_str = ""
-                for i, role_data in enumerate(shop_roles):
-                    role = interaction.guild.get_role(role_data['role_id'])
-                    if role:
-                        role_list_str += f"### {i+1}. {role.mention}\n> **Giá:** `{role_data['price']}` 🪙\n"
-                
-                base_desc = messages.get('SHOP_ROLES_DESC', '')
-                embed.description = (base_desc + "\n\n" + role_list_str) if base_desc else role_list_str
             
-            footer_text = guild_config.get('FOOTER_MESSAGES', {}).get('ROLE_LIST', '')
-            embed.set_footer(text=f"────────────────────\n{footer_text}", icon_url=self.bot.user.avatar.url)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            if not shop_roles:
+                embed = discord.Embed(
+                    title=messages.get('SHOP_ROLES_TITLE', "Danh sách role"),
+                    description=messages.get('SHOP_ROLES_EMPTY', "Shop hiện đang trống."),
+                    color=discord.Color.orange()
+                )
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+
+            # tao view phan trang
+            paginated_view = PaginatedRoleListView(self.bot, interaction, guild_config, shop_roles)
+            initial_embed = await paginated_view.get_page_embed()
+            paginated_view.prev_page.disabled = True
+            paginated_view.next_page.disabled = paginated_view.total_pages <= 1
+            
+            await interaction.followup.send(embed=initial_embed, view=paginated_view, ephemeral=True)
 
         elif action == "purchase":
             await interaction.response.send_modal(PurchaseModal(bot=self.bot))

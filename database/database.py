@@ -187,24 +187,27 @@ def get_guild_config(guild_id: int):
     row = execute_query("SELECT config_data FROM guild_configs WHERE guild_id = %s", (guild_id,), fetch='one')
     return row.get('config_data', {}) if row else None
 
-def update_guild_config(guild_id, **kwargs):
-    # Ham nay don gian hon nhieu
+def update_guild_config(guild_id: int, updates: dict):
+    # ham cap nhat an toan
+    if not updates:
+        return
+        
     current_config = get_guild_config(guild_id)
     if current_config is None:
         current_config = {}
     
     # merge
-    current_config.update(kwargs)
+    current_config.update(updates)
 
     # update lai vao db
-    execute_query(
-        """
-        UPDATE guild_configs 
-        SET config_data = %s 
-        WHERE guild_id = %s
-        """,
-        (Json(current_config), guild_id)
-    )
+    query = """
+        INSERT INTO guild_configs (guild_id, config_data)
+        VALUES (%s, %s)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET config_data = EXCLUDED.config_data;
+    """
+    execute_query(query, (guild_id, Json(current_config)))
+
 
 # Transaction Log Functions
 def log_transaction(guild_id, user_id, transaction_type, item_name, amount_changed, new_balance):
