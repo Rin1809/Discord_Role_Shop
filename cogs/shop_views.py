@@ -226,7 +226,7 @@ class ManageCustomRoleView(View):
 
 class EarningRatesView(View):
     def __init__(self, bot, guild_config, guild_id: int):
-        super().__init__(timeout=300) # timeout 5p
+        super().__init__(timeout=300)
         self.bot = bot
         self.guild_config = guild_config
         self.guild_id = guild_id
@@ -422,7 +422,7 @@ class ShopActionSelect(Select):
             await interaction.response.send_modal(SellModal(bot=self.bot))
             
         elif action == "custom_role":
-            await interaction.response.defer(ephemeral=True)
+            # xoa defer
             custom_role_config = guild_config.get('CUSTOM_ROLE_CONFIG', {})
             min_boosts = custom_role_config.get('MIN_BOOST_COUNT', 2)
             
@@ -434,21 +434,22 @@ class ShopActionSelect(Select):
                     boost_count = sum(1 for m in interaction.guild.premium_subscribers if m.id == interaction.user.id)
                 if boost_count < min_boosts:
                     msg = messages.get('CUSTOM_ROLE_NO_BOOSTS', "Bạn cần có ít nhất {min_boosts} boost để dùng tính năng này.").format(min_boosts=min_boosts, boost_count=boost_count)
-                    await interaction.followup.send(msg, ephemeral=True)
+                    await interaction.response.send_message(msg, ephemeral=True) # doi thanh response
                     return
 
             if db.get_custom_role(interaction.user.id, interaction.guild.id):
                 msg = messages.get('CUSTOM_ROLE_ALREADY_OWNED', "Bạn đã có một role tùy chỉnh rồi. Hãy dùng nút 'Quản lý Role' để chỉnh sửa.")
-                await interaction.followup.send(msg, ephemeral=True)
+                await interaction.response.send_message(msg, ephemeral=True) # doi thanh response
                 return
 
             price = int(custom_role_config.get('PRICE', 1000))
             user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
             if user_data['balance'] < price:
                 msg = messages.get('CUSTOM_ROLE_NO_COIN', "Bạn không đủ coin! Cần {price} coin nhưng bạn chỉ có {balance}.").format(price=price, balance=user_data['balance'])
-                await interaction.followup.send(msg, ephemeral=True)
+                await interaction.response.send_message(msg, ephemeral=True) # doi thanh response
                 return
             
+            # gui modal truc tiep
             await interaction.response.send_modal(CustomRoleModal(bot=self.bot, guild_id=interaction.guild.id, guild_config=guild_config, price=price))
 
 class ShopView(View):
