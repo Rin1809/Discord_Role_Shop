@@ -2,6 +2,7 @@ import discord
 from discord.ui import Modal, TextInput
 from database import database as db
 import re
+import asyncio
 
 def is_valid_hex_color(s):
     return re.match(r'^#?([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$', s) is not None
@@ -258,13 +259,17 @@ class CustomRoleModal(Modal):
                 name=role_name, color=new_color, reason=f"Role tùy chỉnh của {interaction.user.name}"
             )
             
-            try: # tu dong day role len
+            await asyncio.sleep(1) # delay de discord kip xu ly
+            
+            try:
                 bot_member = guild.me
-                if bot_member and bot_member.top_role:
-                    target_position = bot_member.top_role.position
-                    await new_role.edit(position=target_position, reason="Tu dong dua role len cao")
-            except Exception:
-                pass
+                if bot_member and bot_member.top_role and bot_member.top_role.position > 1:
+                    target_position = bot_member.top_role.position - 1
+                    await new_role.edit(position=target_position, reason="Role tuy chinh - dua len cao")
+            except discord.Forbidden:
+                pass # bo qua neu ko co quyen
+            except Exception as e:
+                print(f"Loi khi di chuyen role: {e}")
 
             await member.add_roles(new_role)
             
