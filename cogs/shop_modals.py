@@ -259,17 +259,22 @@ class CustomRoleModal(Modal):
                 name=role_name, color=new_color, reason=f"Role tùy chỉnh của {interaction.user.name}"
             )
             
-            await asyncio.sleep(1) # delay de discord kip xu ly
-            
-            try:
-                bot_member = guild.me
-                if bot_member and bot_member.top_role and bot_member.top_role.position > 1:
-                    target_position = bot_member.top_role.position - 1
-                    await new_role.edit(position=target_position, reason="Role tuy chinh - dua len cao")
-            except discord.Forbidden:
-                pass # bo qua neu ko co quyen
-            except Exception as e:
-                print(f"Loi khi di chuyen role: {e}")
+            # di chuyen role len cao
+            for attempt in range(3):
+                try:
+                    bot_member = guild.me
+                    if bot_member and bot_member.top_role and bot_member.top_role.position > 1:
+                        target_position = bot_member.top_role.position - 1
+                        positions = {new_role: target_position}
+                        await guild.edit_role_positions(positions=positions, reason="Dua role tuy chinh len cao")
+                        break
+                except (discord.HTTPException, discord.NotFound):
+                    if attempt < 2:
+                        await asyncio.sleep(1)
+                except discord.Forbidden:
+                    break
+                except Exception:
+                    break
 
             await member.add_roles(new_role)
             
