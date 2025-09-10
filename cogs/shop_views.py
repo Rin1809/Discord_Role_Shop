@@ -24,10 +24,16 @@ class ConfirmDeleteView(View):
     async def confirm_callback(self, interaction: discord.Interaction, button: Button):
         await interaction.response.defer()
         try:
+            # lay gia goc de hoan tien
+            shop_roles = db.get_shop_roles(self.guild_id)
+            role_data = next((r for r in shop_roles if r['role_id'] == self.role_to_delete.id), None)
+            
             if self.role_to_delete:
                 await self.role_to_delete.delete(reason=f"Nguoi dung {interaction.user} tu xoa")
             
+            # xoa khoi 2 bang
             db.delete_custom_role_data(interaction.user.id, self.guild_id)
+            db.remove_role_from_shop(self.role_to_delete.id, self.guild_id)
             
             for item in self.children:
                 item.disabled = True
@@ -57,7 +63,7 @@ class PaginatedRoleListView(View):
         self.current_page = 0
         self.total_pages = math.ceil(len(self.roles) / ROLES_PER_PAGE)
         self.messages = self.guild_config.get('MESSAGES', {})
-        self.embed_color = discord.Color(int(self.guild_config.get('EMBED_COLOR', '0xff00af'), 16))
+        self.embed_color = discord.Color(int(str(self.guild_config.get('EMBED_COLOR', '#ff00af')).lstrip('#'), 16))
 
     async def get_page_embed(self) -> discord.Embed:
         embed = discord.Embed(
@@ -109,27 +115,28 @@ class RoleListSelect(Select):
         self.bot = bot
         self.guild_config = guild_config
         self.roles_data = {str(r['role_id']): r for r in roles}
-        self.embed_color = discord.Color(int(self.guild_config.get('EMBED_COLOR', '0xff00af'), 16))
+        self.embed_color = discord.Color(int(str(self.guild_config.get('EMBED_COLOR', '#ff00af')).lstrip('#'), 16))
         
         options = []
-        guild = bot.get_guild(int(list(self.roles_data.values())[0]['guild_id']))
-        
-        if guild:
-            for i, role_data in enumerate(roles):
-                role = guild.get_role(role_data['role_id'])
-                if role:
-                    options.append(discord.SelectOption(
-                        label=f"{i+1}. {role.name}",
-                        description=f"Giá: {role_data['price']:,} coin",
-                        value=str(role.id),
-                        emoji="<:g_chamhoi:1326543673957027961>"
-                    ))
+        if roles:
+            guild_id = roles[0]['guild_id']
+            guild = bot.get_guild(guild_id)
+            if guild:
+                for i, role_data in enumerate(roles):
+                    role = guild.get_role(role_data['role_id'])
+                    if role:
+                        options.append(discord.SelectOption(
+                            label=f"{i+1}. {role.name}",
+                            description=f"Giá: {role_data['price']:,} coin",
+                            value=str(role.id),
+                            emoji="<:g_chamhoi:1326543673957027961>"
+                        ))
 
         super().__init__(
             placeholder="Chọn một role để xem chi tiết...", 
             min_values=1, 
             max_values=1, 
-            options=options
+            options=options[:25] # gioi han 25
         )
     
     async def callback(self, interaction: discord.Interaction):
@@ -173,7 +180,7 @@ class QnASelect(Select):
         self.guild_config = guild_config
         self.guild_id = guild_id 
         self.qna_data = self.guild_config.get("QNA_DATA", [])
-        self.embed_color = discord.Color(int(self.guild_config.get('EMBED_COLOR', '0xff00af'), 16))
+        self.embed_color = discord.Color(int(str(self.guild_config.get('EMBED_COLOR', '#ff00af')).lstrip('#'), 16))
 
         options = [
             discord.SelectOption(
@@ -237,11 +244,16 @@ class ManageCustomRoleActionSelect(Select):
 
     async def callback(self, interaction: discord.Interaction):
         action = self.values[0]
+        is_booster = interaction.user.premium_since is not None
 
         if action == "edit":
-            view = CustomRoleStyleSelectView(bot=self.bot, guild_config=self.guild_config, guild_id=self.guild_id, role_to_edit=self.role_to_edit)
-            await interaction.response.send_message("Vui lòng chọn style bạn muốn đổi sang:", view=view, ephemeral=True)
-            
+            if is_booster:
+                view = CustomRoleStyleSelectView(bot=self.bot, guild_config=self.guild_config, guild_id=self.guild_id, role_to_edit=self.role_to_edit, creation_price=None, is_booster=True)
+                await interaction.response.send_message("Vui lòng chọn style bạn muốn đổi sang:", view=view, ephemeral=True)
+            else:
+                modal = CustomRoleModal(bot=self.bot, guild_id=self.guild_id, guild_config=self.guild_config, style="Solid", is_booster=False, role_to_edit=self.role_to_edit, creation_price=None)
+                await interaction.response.send_modal(modal)
+
         elif action == "delete":
             embed = discord.Embed(
                 title="Xác nhận Xóa Role",
@@ -259,14 +271,25 @@ class ManageCustomRoleView(View):
         self.bot = bot
         self.add_item(ManageCustomRoleActionSelect(bot, guild_config, role_to_edit, guild_id))
 
-class EarningRatesView(View):
-    def __init__(self, bot, guild_config, guild_id: int):
+# view moi cho tai khoan cua toi
+class AccountView(View):
+    def __init__(self, bot, guild_config, guild_id: int, custom_role: dict = None):
         super().__init__(timeout=300)
         self.bot = bot
         self.guild_config = guild_config
         self.guild_id = guild_id
+        self.custom_role_data = custom_role
         self.messages = self.guild_config.get('MESSAGES', {})
-        self.embed_color = discord.Color(int(self.guild_config.get('EMBED_COLOR', '0xff00af'), 16))
+        self.embed_color = discord.Color(int(str(self.guild_config.get('EMBED_COLOR', '#ff00af')).lstrip('#'), 16))
+        
+        # them nut qly neu co role
+        if self.custom_role_data:
+            self.add_item(self.create_manage_button())
+
+    def create_manage_button(self):
+        button = Button(label="Quản lý Role cá nhân", style=discord.ButtonStyle.secondary, emoji="<a:g_l933518643407495238:1274398152941637694>", row=1)
+        button.callback = self.manage_custom_role_callback
+        return button
 
     @discord.ui.button(label="?", style=discord.ButtonStyle.secondary, row=0)
     async def bot_info_callback(self, interaction: discord.Interaction, button: Button):
@@ -277,114 +300,67 @@ class EarningRatesView(View):
             ephemeral=True
         )
 
-    @discord.ui.button(label="Cách Đào Coin", style=discord.ButtonStyle.secondary, emoji="💰", row=1)
+    @discord.ui.button(label="Cách Đào Coin", style=discord.ButtonStyle.secondary, emoji="💰", row=0)
     async def show_rates_callback(self, interaction: discord.Interaction, button: Button):
         await interaction.response.defer(ephemeral=True)
         guild = self.bot.get_guild(self.guild_id)
         if not guild:
             return await interaction.followup.send("Lỗi: Không thể tìm thấy server tương ứng.", ephemeral=True)
-
+        # ... (phan code nay giu nguyen)
         desc_parts = []
-        
-        if base_desc := self.messages.get('EARNING_RATES_DESC'):
-            desc_parts.append(base_desc)
-
-        if booster_info := self.messages.get('BOOSTER_MULTIPLIER_INFO'):
-            desc_parts.append(booster_info)
-
+        if base_desc := self.messages.get('EARNING_RATES_DESC'): desc_parts.append(base_desc)
+        if booster_info := self.messages.get('BOOSTER_MULTIPLIER_INFO'): desc_parts.append(booster_info)
         rates_lines = []
         currency_rates = self.guild_config.get('CURRENCY_RATES', {})
-
         if default_rates := currency_rates.get('default'):
             rates_lines.append(f"**<:g_chamhoi:1326543673957027961> Tỷ lệ mặc định**")
-            if msg_rate := default_rates.get('MESSAGES_PER_COIN'):
-                rates_lines.append(f"> <a:timchat:1406136711741706301> `{msg_rate}` tin nhắn = `1` <a:coin:1406137409384480850>")
-            if react_rate := default_rates.get('REACTIONS_PER_COIN'):
-                rates_lines.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
+            if msg_rate := default_rates.get('MESSAGES_PER_COIN'): rates_lines.append(f"> <a:timchat:1406136711741706301> `{msg_rate}` tin nhắn = `1` <a:coin:1406137409384480850>")
+            if react_rate := default_rates.get('REACTIONS_PER_COIN'): rates_lines.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
             rates_lines.append("")
-
         if categories_config := currency_rates.get('categories', {}):
             for cat_id, rates in categories_config.items():
                 category = guild.get_channel(int(cat_id))
                 if category:
                     rates_lines.append(f"**<:g_chamhoi:1326543673957027961> Danh mục: {category.name}**")
-                    if msg_rate := rates.get('MESSAGES_PER_COIN'):
-                        rates_lines.append(f"> <a:timchat:1406136711741706301> `{msg_rate}` tin nhắn = `1` <a:coin:1406137409384480850>")
-                    if react_rate := rates.get('REACTIONS_PER_COIN'):
-                        rates_lines.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
+                    if msg_rate := rates.get('MESSAGES_PER_COIN'): rates_lines.append(f"> <a:timchat:1406136711741706301> `{msg_rate}` tin nhắn = `1` <a:coin:1406137409384480850>")
+                    if react_rate := rates.get('REACTIONS_PER_COIN'): rates_lines.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
                     rates_lines.append("") 
-
         if channels_config := currency_rates.get('channels', {}):
             for chan_id, rates in channels_config.items():
                 channel = guild.get_channel(int(chan_id))
                 if channel:
                     rates_lines.append(f"**<:channel:1406136670709092422> Kênh: {channel.mention}**")
-                    if msg_rate := rates.get('MESSAGES_PER_COIN'):
-                        rates_lines.append(f"> <a:timchat:1406136711741706301> `{msg_rate}` tin nhắn = `1` <a:coin:1406137409384480850>")
-                    if react_rate := rates.get('REACTIONS_PER_COIN'):
-                        rates_lines.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
+                    if msg_rate := rates.get('MESSAGES_PER_COIN'): rates_lines.append(f"> <a:timchat:1406136711741706301> `{msg_rate}` tin nhắn = `1` <a:coin:1406137409384480850>")
+                    if react_rate := rates.get('REACTIONS_PER_COIN'): rates_lines.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
                     rates_lines.append("") 
-        
         if rates_lines:
             if rates_lines[-1] == "": rates_lines.pop()
             desc_parts.append("\n".join(rates_lines))
-
-        embed = discord.Embed(
-            title=self.messages.get('EARNING_RATES_TITLE', "Tỷ lệ kiếm coin"),
-            description="\n\n".join(desc_parts),
-            color=self.embed_color
-        )
-        
+        embed = discord.Embed(title=self.messages.get('EARNING_RATES_TITLE', "Tỷ lệ kiếm coin"), description="\n\n".join(desc_parts), color=self.embed_color)
         if guild.icon:
             embed.set_author(name=guild.name, icon_url=guild.icon.url)
             embed.set_thumbnail(url=guild.icon.url)
-        else:
-            embed.set_author(name=guild.name)
-
-        if self.guild_config.get('EARNING_RATES_IMAGE_URL'):
-            embed.set_image(url=self.guild_config.get('EARNING_RATES_IMAGE_URL'))
-        
+        else: embed.set_author(name=guild.name)
+        if self.guild_config.get('EARNING_RATES_IMAGE_URL'): embed.set_image(url=self.guild_config.get('EARNING_RATES_IMAGE_URL'))
         footer_text = self.guild_config.get('FOOTER_MESSAGES', {}).get('EARNING_RATES', '')
         embed.set_footer(text=f"────────────────────\n{footer_text}", icon_url=self.bot.user.avatar.url)
-        
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-
-    @discord.ui.button(label="Quản lý Role cá nhân", style=discord.ButtonStyle.secondary, emoji="<a:g_l933518643407495238:1274398152941637694>", row=1)
-    async def manage_custom_role_callback(self, interaction: discord.Interaction, button: Button):
+    async def manage_custom_role_callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         
         guild = self.bot.get_guild(self.guild_id)
         if not guild:
             return await interaction.followup.send("Lỗi: Không thể tìm thấy server tương ứng.", ephemeral=True)
 
-        guild_id = guild.id
-        user_data = db.get_or_create_user(interaction.user.id, guild_id)
-        custom_role_config = self.guild_config.get('CUSTOM_ROLE_CONFIG', {})
-        min_boosts = custom_role_config.get('MIN_BOOST_COUNT', 2)
-        
-        is_test_user = (interaction.user.id == 873576591693873252)
-        
-        member = guild.get_member(interaction.user.id)
-        if not member:
-             return await interaction.followup.send("Lỗi: Không thể tìm thấy bạn trên server.", ephemeral=True)
-
-        if not is_test_user:
-            boost_count = user_data.get('fake_boosts', 0)
-            if boost_count == 0 and member.premium_since:
-                boost_count = sum(1 for m in guild.premium_subscribers if m.id == member.id)
-
-            if boost_count < min_boosts:
-                msg = self.messages.get('CUSTOM_ROLE_NO_BOOSTS', "Bạn cần có ít nhất {min_boosts} boost để dùng tính năng này.").format(min_boosts=min_boosts, boost_count=boost_count)
-                return await interaction.followup.send(msg, ephemeral=True)
-        
-        custom_role_data = db.get_custom_role(interaction.user.id, guild_id)
+        # lay lai data de dam bao moi nhat
+        custom_role_data = db.get_custom_role(interaction.user.id, self.guild_id)
         if not custom_role_data:
             return await interaction.followup.send(self.messages.get('CUSTOM_ROLE_NOT_OWNED', "Bạn chưa tạo role tùy chỉnh nào cả."), ephemeral=True)
 
         role_obj = guild.get_role(custom_role_data['role_id'])
         if not role_obj:
-            db.delete_custom_role_data(interaction.user.id, guild_id)
+            db.delete_custom_role_data(interaction.user.id, self.guild_id)
             return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Role tùy chỉnh của bạn không còn tồn tại. Dữ liệu đã được xóa.", ephemeral=True)
 
         embed = discord.Embed(
@@ -398,16 +374,18 @@ class EarningRatesView(View):
         if self.guild_config.get('SHOP_EMBED_IMAGE_URL'):
             embed.set_image(url=self.guild_config.get('SHOP_EMBED_IMAGE_URL'))
             
-        view = ManageCustomRoleView(bot=self.bot, guild_config=self.guild_config, role_to_edit=role_obj, guild_id=guild_id)
+        view = ManageCustomRoleView(bot=self.bot, guild_config=self.guild_config, role_to_edit=role_obj, guild_id=self.guild_id)
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
+
 class CustomRoleStyleSelect(Select):
-    def __init__(self, bot, guild_config, guild_id, role_to_edit=None, price=None):
+    def __init__(self, bot, guild_config, guild_id, creation_price, is_booster, role_to_edit=None):
         self.bot = bot
         self.guild_config = guild_config
         self.guild_id = guild_id
+        self.creation_price = creation_price
+        self.is_booster = is_booster
         self.role_to_edit = role_to_edit
-        self.price = price
 
         options = [
             discord.SelectOption(label="Solid", description="Một màu đơn sắc.", emoji="🎨"),
@@ -423,15 +401,16 @@ class CustomRoleStyleSelect(Select):
             guild_id=self.guild_id, 
             guild_config=self.guild_config, 
             style=selected_style,
-            price=self.price,
+            creation_price=self.creation_price,
+            is_booster=self.is_booster,
             role_to_edit=self.role_to_edit
         )
         await interaction.response.send_modal(modal)
 
 class CustomRoleStyleSelectView(View):
-    def __init__(self, bot, guild_config, guild_id, role_to_edit=None, price=None):
+    def __init__(self, bot, guild_config, guild_id, creation_price, is_booster, role_to_edit=None):
         super().__init__(timeout=180)
-        self.add_item(CustomRoleStyleSelect(bot, guild_config, guild_id, role_to_edit, price))
+        self.add_item(CustomRoleStyleSelect(bot, guild_config, guild_id, creation_price, is_booster, role_to_edit))
 
 class ShopActionSelect(Select):
     def __init__(self, bot):
@@ -440,7 +419,8 @@ class ShopActionSelect(Select):
             discord.SelectOption(label="Danh Sách Role", value="list_roles", description="Xem tất cả các role đang được bán.", emoji="<:MenheraFlower:1406458230317645906>"),
             discord.SelectOption(label="Mua Role", value="purchase", description="Sở hữu ngay role bạn yêu thích.", emoji="<:MenheraFlowers:1406458246528635031>"),
             discord.SelectOption(label="Bán Role", value="sell", description="Bán lại role đã mua để nhận lại coin.", emoji="<a:MenheraNod:1406458257349935244>"),
-            discord.SelectOption(label="Role Tùy Chỉnh (Booster)", value="custom_role", description="Tạo role với tên và màu của riêng bạn.", emoji="<a:boost:1406487216649277510>")
+            discord.SelectOption(label="Tạo Role Style (Booster)", value="custom_role_booster", description="Tạo role với style đặc biệt chỉ dành cho Booster.", emoji="<a:boost:1406487216649277510>"),
+            discord.SelectOption(label="Tạo Role Thường", value="custom_role_member", description="Tạo một role với tên và màu sắc của riêng bạn.", emoji="<:g_chamhoi:1326543673957027961>")
         ]
         super().__init__(custom_id="shop_view:action_select", placeholder="Chọn một hành động giao dịch...", min_values=1, max_values=1, options=options)
     
@@ -487,37 +467,47 @@ class ShopActionSelect(Select):
         elif action == "sell":
             await interaction.response.send_modal(SellModal(bot=self.bot))
             
-        elif action == "custom_role":
+        elif action == "custom_role_booster":
             await interaction.response.defer(ephemeral=True)
-            user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
-            custom_role_config = guild_config.get('CUSTOM_ROLE_CONFIG', {})
-            min_boosts = custom_role_config.get('MIN_BOOST_COUNT', 2)
             
-            is_test_user = (interaction.user.id == 873576591693873252)
-            
-            if not is_test_user: 
-                boost_count = user_data.get('fake_boosts', 0)
-                if boost_count == 0 and interaction.user.premium_since:
-                    boost_count = sum(1 for m in interaction.guild.premium_subscribers if m.id == interaction.user.id)
-
-                if boost_count < min_boosts:
-                    msg = messages.get('CUSTOM_ROLE_NO_BOOSTS', "Bạn cần có ít nhất {min_boosts} boost để dùng tính năng này.").format(min_boosts=min_boosts, boost_count=boost_count)
-                    await interaction.followup.send(msg, ephemeral=True)
-                    return
-
             if db.get_custom_role(interaction.user.id, interaction.guild.id):
-                msg = messages.get('CUSTOM_ROLE_ALREADY_OWNED', "Bạn đã có một role tùy chỉnh rồi. Hãy dùng nút 'Quản lý Role' để chỉnh sửa.")
-                await interaction.followup.send(msg, ephemeral=True)
-                return
-
-            price = int(custom_role_config.get('PRICE', 1000))
-            if user_data['balance'] < price:
-                msg = messages.get('CUSTOM_ROLE_NO_COIN', "Bạn không đủ coin! Cần {price} coin nhưng bạn chỉ có {balance}.").format(price=price, balance=user_data['balance'])
-                await interaction.followup.send(msg, ephemeral=True)
-                return
+                msg = messages.get('CUSTOM_ROLE_ALREADY_OWNED', "Bạn đã có một role tùy chỉnh rồi. Hãy dùng nút 'Tài khoản của tôi' để quản lý.")
+                return await interaction.followup.send(msg, ephemeral=True)
             
-            view = CustomRoleStyleSelectView(bot=self.bot, guild_config=guild_config, guild_id=interaction.guild.id, price=price)
-            await interaction.followup.send("✨ Vui lòng chọn style bạn muốn cho role tùy chỉnh:", view=view, ephemeral=True)
+            user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
+            booster_config = guild_config.get('CUSTOM_ROLE_CONFIG', {})
+            min_boosts = booster_config.get('MIN_BOOST_COUNT', 99)
+            
+            boost_count = user_data.get('fake_boosts', 0)
+            if boost_count == 0 and interaction.user.premium_since:
+                boost_count = sum(1 for m in interaction.guild.premium_subscribers if m.id == interaction.user.id)
+
+            if boost_count < min_boosts:
+                msg = messages.get('CUSTOM_ROLE_NO_BOOSTS', "Bạn cần có ít nhất {min_boosts} boost để dùng tính năng này.").format(min_boosts=min_boosts, boost_count=boost_count)
+                return await interaction.followup.send(msg, ephemeral=True)
+
+            creation_price = int(booster_config.get('PRICE', 1000))
+            if user_data['balance'] < creation_price:
+                msg = messages.get('CUSTOM_ROLE_NO_COIN', "Bạn không đủ coin! Cần {price} coin để tạo role nhưng bạn chỉ có {balance}.").format(price=creation_price, balance=user_data['balance'])
+                return await interaction.followup.send(msg, ephemeral=True)
+
+            view = CustomRoleStyleSelectView(bot=self.bot, guild_config=guild_config, guild_id=interaction.guild.id, creation_price=creation_price, is_booster=True)
+            await interaction.followup.send("✨ Vui lòng chọn style bạn muốn cho role đặc biệt của mình:", view=view, ephemeral=True)
+
+        elif action == "custom_role_member":
+            regular_config = guild_config.get('REGULAR_USER_ROLE_CREATION', {})
+            if not regular_config.get('ENABLED', False):
+                return await interaction.response.send_message("Tính năng tạo role cho thành viên thường đang tắt.", ephemeral=True)
+
+            user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
+            creation_price = int(regular_config.get('CREATION_PRICE', 2000))
+
+            if user_data['balance'] < creation_price:
+                msg = messages.get('CUSTOM_ROLE_NO_COIN', "Bạn không đủ coin! Cần {price} coin để tạo role nhưng bạn chỉ có {balance}.").format(price=creation_price, balance=user_data['balance'])
+                return await interaction.response.send_message(msg, ephemeral=True)
+            
+            modal = CustomRoleModal(bot=self.bot, guild_id=interaction.guild.id, guild_config=guild_config, style="Solid", creation_price=creation_price, is_booster=False)
+            await interaction.response.send_modal(modal)
 
 
 class ShopView(View):
@@ -535,7 +525,7 @@ class ShopView(View):
             return await interaction.followup.send("Lỗi: Không tìm thấy config cho server.", ephemeral=True)
         
         messages = guild_config.get('MESSAGES', {})
-        embed_color = discord.Color(int(guild_config.get('EMBED_COLOR', '0xff00af'), 16))
+        embed_color = discord.Color(int(str(guild_config.get('EMBED_COLOR', '#ff00af')).lstrip('#'), 16))
         
         user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
 
@@ -565,7 +555,7 @@ class ShopView(View):
             multiplier = currency_cog._get_boost_multiplier(interaction.user, guild_config, user_data)
             
             boost_count = user_data.get('fake_boosts', 0)
-            if boost_count == 0:
+            if boost_count == 0 and interaction.user.premium_since:
                  boost_count = sum(1 for m in interaction.guild.premium_subscribers if m.id == interaction.user.id)
 
             if multiplier > 1.0:
@@ -581,7 +571,9 @@ class ShopView(View):
         footer_text = guild_config.get('FOOTER_MESSAGES', {}).get('ACCOUNT_INFO', '')
         embed.set_footer(text=f"────────────────────\n{footer_text}", icon_url=self.bot.user.avatar.url)
         
-        view = EarningRatesView(bot=self.bot, guild_config=guild_config, guild_id=interaction.guild.id)
+        # kiem tra co role dac biet ko de them nut qly
+        custom_role = db.get_custom_role(interaction.user.id, interaction.guild.id)
+        view = AccountView(bot=self.bot, guild_config=guild_config, guild_id=interaction.guild.id, custom_role=custom_role)
         
         try:
             await interaction.user.send(embed=embed, view=view)

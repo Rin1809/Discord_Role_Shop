@@ -113,7 +113,7 @@ class SellModal(Modal, title="Bán Lại Role"):
 
         guild_config = self.bot.guild_configs.get(str(interaction.guild.id))
         if not guild_config:
-            return await interaction.followup.send("Lỗi: Không tìm thấy config cho server này.", ephemeral=True)
+            return await interaction.followup.send("Lỗi: Không tìm thấy config cho server ini.", ephemeral=True)
 
         embed_color = discord.Color(int(str(guild_config.get('EMBED_COLOR', '#ff00af')).lstrip('#'), 16))
 
@@ -188,13 +188,14 @@ class SellModal(Modal, title="Bán Lại Role"):
             )
 
 class CustomRoleModal(Modal):
-    def __init__(self, bot, guild_id: int, guild_config, style: str, price=None, role_to_edit: discord.Role = None):
-        super().__init__(title=f"Role Style: {style}")
+    def __init__(self, bot, guild_id: int, guild_config, style: str, is_booster: bool, creation_price=None, role_to_edit: discord.Role = None):
+        super().__init__(title=f"Tạo / Sửa Role: {style}")
         self.bot = bot
         self.guild_id = guild_id
         self.guild_config = guild_config
         self.style = style
-        self.price = price
+        self.is_booster = is_booster
+        self.creation_price = creation_price # chi dung khi tao moi
         self.role_to_edit = role_to_edit
         self.embed_color = discord.Color(int(str(guild_config.get('EMBED_COLOR', '#ff00af')).lstrip('#'), 16))
 
@@ -204,15 +205,23 @@ class CustomRoleModal(Modal):
             custom_id="custom_role_name",
             default=role_to_edit.name if role_to_edit else None
         ))
-
-        if self.style == "Gradient":
-            self.add_item(TextInput(label="Màu 1 (HEX, vd: #ff00af)", custom_id="custom_role_color1", default="#ffaaaa"))
-            self.add_item(TextInput(label="Màu 2 (HEX, vd: #5865F2)", custom_id="custom_role_color2", default="#89b4fa"))
-        else:
-            self.add_item(TextInput(
+        
+        # booster moi co style
+        if self.is_booster:
+            if self.style == "Gradient":
+                self.add_item(TextInput(label="Màu 1 (HEX, vd: #ff00af)", custom_id="custom_role_color1", default="#ffaaaa"))
+                self.add_item(TextInput(label="Màu 2 (HEX, vd: #5865F2)", custom_id="custom_role_color2", default="#89b4fa"))
+            else: # Solid hoac Holographic
+                self.add_item(TextInput(
+                    label="Mã màu HEX (ví dụ: #ff00af)",
+                    custom_id="custom_role_color",
+                    default=str(role_to_edit.color) if role_to_edit and self.style == "Solid" else "#ff00af"
+                ))
+        else: # user thuong auto la Solid
+             self.add_item(TextInput(
                 label="Mã màu HEX (ví dụ: #ff00af)",
                 custom_id="custom_role_color",
-                default=str(role_to_edit.color) if role_to_edit and self.style == "Solid" else "#ff00af"
+                default=str(role_to_edit.color) if role_to_edit else "#ffaaaa"
             ))
 
     async def on_submit(self, interaction: discord.Interaction):
@@ -220,8 +229,9 @@ class CustomRoleModal(Modal):
 
         role_name = self.children[0].value
         color1_str, color2_str = None, None
-
-        if self.style == "Gradient":
+        
+        # lay mau
+        if self.is_booster and self.style == "Gradient":
             color1_str = self.children[1].value
             color2_str = self.children[2].value
             if not is_valid_hex_color(color1_str) or not is_valid_hex_color(color2_str):
@@ -241,55 +251,65 @@ class CustomRoleModal(Modal):
 
         user_data = db.get_or_create_user(interaction.user.id, guild.id)
 
-        # th: sua role
+        # th: sua role (chi booster)
         if self.role_to_edit:
             try:
                 await self.role_to_edit.edit(name=role_name, color=new_color, reason=f"User edit request")
                 db.add_or_update_custom_role(interaction.user.id, guild.id, self.role_to_edit.id, role_name, role_color_str, self.style, color1_str, color2_str)
+                
                 await self.notify_admin(interaction, "sửa")
-
                 await interaction.followup.send(f"✅ Đã gửi yêu cầu chỉnh sửa role **{role_name}** đến admin. Vui lòng chờ.", ephemeral=True)
+
             except discord.Forbidden:
                 await interaction.followup.send("❌ Tôi không có quyền để chỉnh sửa role này.", ephemeral=True)
             return
 
         # th: tao role moi
-        if user_data['balance'] < self.price:
-            return await interaction.followup.send(f"Bạn không đủ coin! Cần **{self.price} coin** nhưng bạn chỉ có **{user_data['balance']}**.", ephemeral=True)
+        if user_data['balance'] < self.creation_price:
+            return await interaction.followup.send(f"Bạn không đủ coin! Cần **{self.creation_price} coin** nhưng bạn chỉ có **{user_data['balance']}**.", ephemeral=True)
 
-        new_balance = user_data['balance'] - self.price
+        new_balance = user_data['balance'] - self.creation_price
 
         try:
             member = guild.get_member(interaction.user.id)
             new_role = await guild.create_role(
                 name=role_name, color=new_color, reason=f"Custom role for {interaction.user.name}"
             )
-
-            for attempt in range(3):
-                try:
-                    bot_member = guild.me
-                    if bot_member and bot_member.top_role and bot_member.top_role.position > 1:
-                        target_position = bot_member.top_role.position - 1
-                        await new_role.edit(position=target_position, reason="Dua role len cao")
-                        break
-                except Exception:
-                    if attempt < 2: await asyncio.sleep(1)
-                    else: break
-
-            await member.add_roles(new_role)
-
+            
             db.update_user_data(interaction.user.id, guild.id, balance=new_balance)
-            db.add_or_update_custom_role(interaction.user.id, guild.id, new_role.id, role_name, role_color_str, self.style, color1_str, color2_str)
+            
+            # them vao shop cong khai
+            purchase_price = self.guild_config.get('CUSTOM_ROLE_CONFIG', {}).get('DEFAULT_PURCHASE_PRICE', 500)
+            db.add_role_to_shop(new_role.id, guild.id, purchase_price)
 
             db.log_transaction(
                 guild_id=guild.id, user_id=interaction.user.id,
                 transaction_type='create_custom_role', item_name=role_name,
-                amount_changed=-self.price, new_balance=new_balance
+                amount_changed=-self.creation_price, new_balance=new_balance
             )
 
-            await self.notify_admin(interaction, "tạo mới")
+            # xu ly rieng cho booster
+            if self.is_booster:
+                for attempt in range(3):
+                    try:
+                        bot_member = guild.me
+                        if bot_member and bot_member.top_role and bot_member.top_role.position > 1:
+                            target_position = bot_member.top_role.position - 1
+                            await new_role.edit(position=target_position, reason="Dua role len cao")
+                            break
+                    except Exception:
+                        if attempt < 2: await asyncio.sleep(1)
+                        else: break
+                
+                # them vao bang rieng cua booster
+                db.add_or_update_custom_role(interaction.user.id, guild.id, new_role.id, role_name, role_color_str, self.style, color1_str, color2_str)
+                await self.notify_admin(interaction, "tạo mới")
+                await interaction.followup.send("✅ Yêu cầu của bạn đã được gửi đến admin để thiết lập style. Role cơ bản đã được tạo và gán.", ephemeral=True)
+            else:
+                # user thuong
+                await interaction.followup.send(f"✅ Bạn đã tạo thành công role **{role_name}**! Role này giờ cũng có sẵn trong shop cho người khác mua.", ephemeral=True)
 
-            await interaction.followup.send("✅ Yêu cầu của bạn đã được gửi đến admin để thiết lập style. Role cơ bản đã được tạo và gán.", ephemeral=True)
+            await member.add_roles(new_role)
 
         except discord.Forbidden:
             await interaction.followup.send("❌ Đã xảy ra lỗi! Tôi không có quyền tạo hoặc gán role. Giao dịch đã bị hủy.", ephemeral=True)
@@ -298,7 +318,6 @@ class CustomRoleModal(Modal):
             await interaction.followup.send(f"Đã xảy ra lỗi không mong muốn, vui lòng liên hệ admin.", ephemeral=True)
 
     async def notify_admin(self, interaction: discord.Interaction, action_type: str):
-        # gui log cho admin
         admin_channel_id = self.guild_config.get('ADMIN_LOG_CHANNEL_ID')
         if not admin_channel_id:
             logging.warning(f"ADMIN_LOG_CHANNEL_ID not set for guild {self.guild_id}")
