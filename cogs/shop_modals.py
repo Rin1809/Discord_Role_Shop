@@ -195,7 +195,7 @@ class CustomRoleModal(Modal):
         self.guild_config = guild_config
         self.style = style
         self.is_booster = is_booster
-        self.creation_price = creation_price # chi dung khi tao moi
+        self.creation_price = creation_price # chi dung khi tao
         self.role_to_edit = role_to_edit
         self.embed_color = discord.Color(int(str(guild_config.get('EMBED_COLOR', '#ff00af')).lstrip('#'), 16))
 
@@ -206,7 +206,6 @@ class CustomRoleModal(Modal):
             default=role_to_edit.name if role_to_edit else None
         ))
         
-        # booster moi co style
         if self.is_booster:
             if self.style == "Gradient":
                 self.add_item(TextInput(label="Màu 1 (HEX, vd: #ff00af)", custom_id="custom_role_color1", default="#ffaaaa"))
@@ -217,7 +216,7 @@ class CustomRoleModal(Modal):
                     custom_id="custom_role_color",
                     default=str(role_to_edit.color) if role_to_edit and self.style == "Solid" else "#ff00af"
                 ))
-        else: # user thuong auto la Solid
+        else:
              self.add_item(TextInput(
                 label="Mã màu HEX (ví dụ: #ff00af)",
                 custom_id="custom_role_color",
@@ -230,7 +229,6 @@ class CustomRoleModal(Modal):
         role_name = self.children[0].value
         color1_str, color2_str = None, None
         
-        # lay mau
         if self.is_booster and self.style == "Gradient":
             color1_str = self.children[1].value
             color2_str = self.children[2].value
@@ -251,7 +249,7 @@ class CustomRoleModal(Modal):
 
         user_data = db.get_or_create_user(interaction.user.id, guild.id)
 
-        # th: sua role (chi booster)
+        # TH: sua role
         if self.role_to_edit:
             try:
                 await self.role_to_edit.edit(name=role_name, color=new_color, reason=f"User edit request")
@@ -264,7 +262,7 @@ class CustomRoleModal(Modal):
                 await interaction.followup.send("❌ Tôi không có quyền để chỉnh sửa role này.", ephemeral=True)
             return
 
-        # th: tao role moi
+        # TH: tao role
         if user_data['balance'] < self.creation_price:
             return await interaction.followup.send(f"Bạn không đủ coin! Cần **{self.creation_price} coin** nhưng bạn chỉ có **{user_data['balance']}**.", ephemeral=True)
 
@@ -278,17 +276,12 @@ class CustomRoleModal(Modal):
             
             db.update_user_data(interaction.user.id, guild.id, balance=new_balance)
             
-            # them vao shop cong khai
-            purchase_price = self.guild_config.get('CUSTOM_ROLE_CONFIG', {}).get('DEFAULT_PURCHASE_PRICE', 500)
-            db.add_role_to_shop(new_role.id, guild.id, purchase_price)
-
             db.log_transaction(
                 guild_id=guild.id, user_id=interaction.user.id,
                 transaction_type='create_custom_role', item_name=role_name,
                 amount_changed=-self.creation_price, new_balance=new_balance
             )
 
-            # xu ly rieng cho booster
             if self.is_booster:
                 for attempt in range(3):
                     try:
@@ -301,12 +294,13 @@ class CustomRoleModal(Modal):
                         if attempt < 2: await asyncio.sleep(1)
                         else: break
                 
-                # them vao bang rieng cua booster
                 db.add_or_update_custom_role(interaction.user.id, guild.id, new_role.id, role_name, role_color_str, self.style, color1_str, color2_str)
                 await self.notify_admin(interaction, "tạo mới")
                 await interaction.followup.send("✅ Yêu cầu của bạn đã được gửi đến admin để thiết lập style. Role cơ bản đã được tạo và gán.", ephemeral=True)
             else:
-                # user thuong
+                # user bthg -> them vao shop
+                purchase_price = self.guild_config.get('CUSTOM_ROLE_CONFIG', {}).get('DEFAULT_PURCHASE_PRICE', 500)
+                db.add_role_to_shop(new_role.id, guild.id, purchase_price)
                 await interaction.followup.send(f"✅ Bạn đã tạo thành công role **{role_name}**! Role này giờ cũng có sẵn trong shop cho người khác mua.", ephemeral=True)
 
             await member.add_roles(new_role)

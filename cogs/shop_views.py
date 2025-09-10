@@ -24,14 +24,12 @@ class ConfirmDeleteView(View):
     async def confirm_callback(self, interaction: discord.Interaction, button: Button):
         await interaction.response.defer()
         try:
-            # lay gia goc de hoan tien
             shop_roles = db.get_shop_roles(self.guild_id)
             role_data = next((r for r in shop_roles if r['role_id'] == self.role_to_delete.id), None)
             
             if self.role_to_delete:
                 await self.role_to_delete.delete(reason=f"Nguoi dung {interaction.user} tu xoa")
             
-            # xoa khoi 2 bang
             db.delete_custom_role_data(interaction.user.id, self.guild_id)
             db.remove_role_from_shop(self.role_to_delete.id, self.guild_id)
             
@@ -136,7 +134,7 @@ class RoleListSelect(Select):
             placeholder="Chọn một role để xem chi tiết...", 
             min_values=1, 
             max_values=1, 
-            options=options[:25] # gioi han 25
+            options=options[:25]
         )
     
     async def callback(self, interaction: discord.Interaction):
@@ -271,7 +269,6 @@ class ManageCustomRoleView(View):
         self.bot = bot
         self.add_item(ManageCustomRoleActionSelect(bot, guild_config, role_to_edit, guild_id))
 
-# view moi cho tai khoan cua toi
 class AccountView(View):
     def __init__(self, bot, guild_config, guild_id: int, custom_role: dict = None):
         super().__init__(timeout=300)
@@ -282,7 +279,6 @@ class AccountView(View):
         self.messages = self.guild_config.get('MESSAGES', {})
         self.embed_color = discord.Color(int(str(self.guild_config.get('EMBED_COLOR', '#ff00af')).lstrip('#'), 16))
         
-        # them nut qly neu co role
         if self.custom_role_data:
             self.add_item(self.create_manage_button())
 
@@ -306,10 +302,11 @@ class AccountView(View):
         guild = self.bot.get_guild(self.guild_id)
         if not guild:
             return await interaction.followup.send("Lỗi: Không thể tìm thấy server tương ứng.", ephemeral=True)
-        # ... (phan code nay giu nguyen)
+
         desc_parts = []
         if base_desc := self.messages.get('EARNING_RATES_DESC'): desc_parts.append(base_desc)
         if booster_info := self.messages.get('BOOSTER_MULTIPLIER_INFO'): desc_parts.append(booster_info)
+        
         rates_lines = []
         currency_rates = self.guild_config.get('CURRENCY_RATES', {})
         if default_rates := currency_rates.get('default'):
@@ -317,6 +314,7 @@ class AccountView(View):
             if msg_rate := default_rates.get('MESSAGES_PER_COIN'): rates_lines.append(f"> <a:timchat:1406136711741706301> `{msg_rate}` tin nhắn = `1` <a:coin:1406137409384480850>")
             if react_rate := default_rates.get('REACTIONS_PER_COIN'): rates_lines.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
             rates_lines.append("")
+
         if categories_config := currency_rates.get('categories', {}):
             for cat_id, rates in categories_config.items():
                 category = guild.get_channel(int(cat_id))
@@ -325,6 +323,7 @@ class AccountView(View):
                     if msg_rate := rates.get('MESSAGES_PER_COIN'): rates_lines.append(f"> <a:timchat:1406136711741706301> `{msg_rate}` tin nhắn = `1` <a:coin:1406137409384480850>")
                     if react_rate := rates.get('REACTIONS_PER_COIN'): rates_lines.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
                     rates_lines.append("") 
+        
         if channels_config := currency_rates.get('channels', {}):
             for chan_id, rates in channels_config.items():
                 channel = guild.get_channel(int(chan_id))
@@ -333,15 +332,20 @@ class AccountView(View):
                     if msg_rate := rates.get('MESSAGES_PER_COIN'): rates_lines.append(f"> <a:timchat:1406136711741706301> `{msg_rate}` tin nhắn = `1` <a:coin:1406137409384480850>")
                     if react_rate := rates.get('REACTIONS_PER_COIN'): rates_lines.append(f"> <:reaction:1406136638421336104> `{react_rate}` reactions = `1` <a:coin:1406137409384480850>")
                     rates_lines.append("") 
+
         if rates_lines:
             if rates_lines[-1] == "": rates_lines.pop()
             desc_parts.append("\n".join(rates_lines))
+        
         embed = discord.Embed(title=self.messages.get('EARNING_RATES_TITLE', "Tỷ lệ kiếm coin"), description="\n\n".join(desc_parts), color=self.embed_color)
+        
         if guild.icon:
             embed.set_author(name=guild.name, icon_url=guild.icon.url)
             embed.set_thumbnail(url=guild.icon.url)
         else: embed.set_author(name=guild.name)
+
         if self.guild_config.get('EARNING_RATES_IMAGE_URL'): embed.set_image(url=self.guild_config.get('EARNING_RATES_IMAGE_URL'))
+        
         footer_text = self.guild_config.get('FOOTER_MESSAGES', {}).get('EARNING_RATES', '')
         embed.set_footer(text=f"────────────────────\n{footer_text}", icon_url=self.bot.user.avatar.url)
         await interaction.followup.send(embed=embed, ephemeral=True)
@@ -353,7 +357,6 @@ class AccountView(View):
         if not guild:
             return await interaction.followup.send("Lỗi: Không thể tìm thấy server tương ứng.", ephemeral=True)
 
-        # lay lai data de dam bao moi nhat
         custom_role_data = db.get_custom_role(interaction.user.id, self.guild_id)
         if not custom_role_data:
             return await interaction.followup.send(self.messages.get('CUSTOM_ROLE_NOT_OWNED', "Bạn chưa tạo role tùy chỉnh nào cả."), ephemeral=True)
@@ -545,7 +548,8 @@ class ShopView(View):
         shop_roles_db = db.get_shop_roles(interaction.guild.id)
         if shop_roles_db:
             shop_role_ids = {r['role_id'] for r in shop_roles_db}
-            owned_roles = [role.mention for role in interaction.user.roles if role.id in shop_role_ids]
+            # hien thi ten, ko mention
+            owned_roles = [f"`{role.name}`" for role in interaction.user.roles if role.id in shop_role_ids]
             
             owned_roles_str = "\n".join(owned_roles) if owned_roles else "Chưa sở hữu role nào."
             embed.add_field(name="<:MenheraFlower:1406458230317645906> Role Shop đã sở hữu", value=owned_roles_str, inline=False)
@@ -571,7 +575,6 @@ class ShopView(View):
         footer_text = guild_config.get('FOOTER_MESSAGES', {}).get('ACCOUNT_INFO', '')
         embed.set_footer(text=f"────────────────────\n{footer_text}", icon_url=self.bot.user.avatar.url)
         
-        # kiem tra co role dac biet ko de them nut qly
         custom_role = db.get_custom_role(interaction.user.id, interaction.guild.id)
         view = AccountView(bot=self.bot, guild_config=guild_config, guild_id=interaction.guild.id, custom_role=custom_role)
         
