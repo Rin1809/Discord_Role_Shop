@@ -6,7 +6,6 @@ import math
 
 ROLES_PER_PAGE = 5
 
-# lop view xac nhan xoa
 class ConfirmDeleteView(View):
     def __init__(self, bot, role_to_delete: discord.Role, guild_id: int):
         super().__init__(timeout=60)
@@ -222,9 +221,9 @@ class ManageCustomRoleActionSelect(Select):
 
         options = [
             discord.SelectOption(
-                label="Sửa Tên & Màu",
+                label="Sửa Tên & Style",
                 value="edit",
-                description="Thay đổi tên và màu sắc của role.",
+                description="Thay đổi tên, màu sắc và style của role.",
                 emoji="✏️"
             ),
             discord.SelectOption(
@@ -240,11 +239,10 @@ class ManageCustomRoleActionSelect(Select):
         action = self.values[0]
 
         if action == "edit":
-            modal = CustomRoleModal(bot=self.bot, guild_id=self.guild_id, guild_config=self.guild_config, role_to_edit=self.role_to_edit)
-            await interaction.response.send_modal(modal)
-
+            view = CustomRoleStyleSelectView(bot=self.bot, guild_config=self.guild_config, guild_id=self.guild_id, role_to_edit=self.role_to_edit)
+            await interaction.response.send_message("Vui lòng chọn style bạn muốn đổi sang:", view=view, ephemeral=True)
+            
         elif action == "delete":
-            # hien view xac nhan
             embed = discord.Embed(
                 title="Xác nhận Xóa Role",
                 description=f"Bạn có chắc chắn muốn xóa vĩnh viễn role {self.role_to_edit.mention} không?\n**Hành động này không thể hoàn tác.**",
@@ -403,6 +401,37 @@ class EarningRatesView(View):
         view = ManageCustomRoleView(bot=self.bot, guild_config=self.guild_config, role_to_edit=role_obj, guild_id=guild_id)
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
+class CustomRoleStyleSelect(Select):
+    def __init__(self, bot, guild_config, guild_id, role_to_edit=None, price=None):
+        self.bot = bot
+        self.guild_config = guild_config
+        self.guild_id = guild_id
+        self.role_to_edit = role_to_edit
+        self.price = price
+
+        options = [
+            discord.SelectOption(label="Solid", description="Một màu đơn sắc.", emoji="🎨"),
+            discord.SelectOption(label="Gradient", description="Chuyển màu giữa 2 màu.", emoji="🌈"),
+            discord.SelectOption(label="Holographic", description="Hiệu ứng 7 sắc cầu vồng.", emoji="✨")
+        ]
+        super().__init__(placeholder="Chọn một kiểu hiển thị cho role...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        selected_style = self.values[0]
+        modal = CustomRoleModal(
+            bot=self.bot, 
+            guild_id=self.guild_id, 
+            guild_config=self.guild_config, 
+            style=selected_style,
+            price=self.price,
+            role_to_edit=self.role_to_edit
+        )
+        await interaction.response.send_modal(modal)
+
+class CustomRoleStyleSelectView(View):
+    def __init__(self, bot, guild_config, guild_id, role_to_edit=None, price=None):
+        super().__init__(timeout=180)
+        self.add_item(CustomRoleStyleSelect(bot, guild_config, guild_id, role_to_edit, price))
 
 class ShopActionSelect(Select):
     def __init__(self, bot):
@@ -459,6 +488,7 @@ class ShopActionSelect(Select):
             await interaction.response.send_modal(SellModal(bot=self.bot))
             
         elif action == "custom_role":
+            await interaction.response.defer(ephemeral=True)
             user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
             custom_role_config = guild_config.get('CUSTOM_ROLE_CONFIG', {})
             min_boosts = custom_role_config.get('MIN_BOOST_COUNT', 2)
@@ -472,21 +502,23 @@ class ShopActionSelect(Select):
 
                 if boost_count < min_boosts:
                     msg = messages.get('CUSTOM_ROLE_NO_BOOSTS', "Bạn cần có ít nhất {min_boosts} boost để dùng tính năng này.").format(min_boosts=min_boosts, boost_count=boost_count)
-                    await interaction.response.send_message(msg, ephemeral=True)
+                    await interaction.followup.send(msg, ephemeral=True)
                     return
 
             if db.get_custom_role(interaction.user.id, interaction.guild.id):
                 msg = messages.get('CUSTOM_ROLE_ALREADY_OWNED', "Bạn đã có một role tùy chỉnh rồi. Hãy dùng nút 'Quản lý Role' để chỉnh sửa.")
-                await interaction.response.send_message(msg, ephemeral=True)
+                await interaction.followup.send(msg, ephemeral=True)
                 return
 
             price = int(custom_role_config.get('PRICE', 1000))
             if user_data['balance'] < price:
                 msg = messages.get('CUSTOM_ROLE_NO_COIN', "Bạn không đủ coin! Cần {price} coin nhưng bạn chỉ có {balance}.").format(price=price, balance=user_data['balance'])
-                await interaction.response.send_message(msg, ephemeral=True)
+                await interaction.followup.send(msg, ephemeral=True)
                 return
             
-            await interaction.response.send_modal(CustomRoleModal(bot=self.bot, guild_id=interaction.guild.id, guild_config=guild_config, price=price))
+            view = CustomRoleStyleSelectView(bot=self.bot, guild_config=guild_config, guild_id=interaction.guild.id, price=price)
+            await interaction.followup.send("✨ Vui lòng chọn style bạn muốn cho role tùy chỉnh:", view=view, ephemeral=True)
+
 
 class ShopView(View):
     def __init__(self, bot): 
@@ -520,7 +552,6 @@ class ShopView(View):
         balance_str = messages.get('BALANCE_FIELD_VALUE', "{balance} coin").format(balance=f"{user_data['balance']:,}")
         embed.add_field(name=f"```{messages.get('BALANCE_FIELD_NAME', 'Số dư')}```", value=balance_str, inline=False)
         
-        # them ds role da mua
         shop_roles_db = db.get_shop_roles(interaction.guild.id)
         if shop_roles_db:
             shop_role_ids = {r['role_id'] for r in shop_roles_db}

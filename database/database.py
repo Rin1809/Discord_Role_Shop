@@ -26,7 +26,7 @@ def init_db(database_url: str):
         db_pool = psycopg2.pool.SimpleConnectionPool(1, 20, dsn=database_url)
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                # bang users
+                # tao bang neu chua co
                 cur.execute('''
                     CREATE TABLE IF NOT EXISTS users (
                         user_id BIGINT NOT NULL,
@@ -38,8 +38,6 @@ def init_db(database_url: str):
                         PRIMARY KEY (user_id, guild_id)
                     )
                 ''')
-
-                # bang shop roles
                 cur.execute('''
                     CREATE TABLE IF NOT EXISTS shop_roles (
                         role_id BIGINT PRIMARY KEY,
@@ -47,8 +45,6 @@ def init_db(database_url: str):
                         price INTEGER NOT NULL
                     )
                 ''')
-                
-                # bang custom roles
                 cur.execute('''
                     CREATE TABLE IF NOT EXISTS custom_roles (
                         user_id BIGINT NOT NULL,
@@ -59,16 +55,12 @@ def init_db(database_url: str):
                         PRIMARY KEY (user_id, guild_id)
                     )
                 ''')
-
-                # bang config, don gian hoa
                 cur.execute('''
                     CREATE TABLE IF NOT EXISTS guild_configs (
                         guild_id BIGINT PRIMARY KEY,
                         config_data JSONB
                     )
                 ''')
-                
-                # bang ls giao dich
                 cur.execute('''
                     CREATE TABLE IF NOT EXISTS transactions (
                         transaction_id SERIAL PRIMARY KEY,
@@ -81,6 +73,20 @@ def init_db(database_url: str):
                         timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
+
+                # kiem tra & them cot moi vao bang custom_roles
+                cols_to_add = {
+                    'role_style': 'TEXT',
+                    'gradient_color_1': 'TEXT',
+                    'gradient_color_2': 'TEXT'
+                }
+                cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'custom_roles'")
+                existing_cols = [row[0] for row in cur.fetchall()]
+                
+                for col, col_type in cols_to_add.items():
+                    if col not in existing_cols:
+                        cur.execute(f"ALTER TABLE custom_roles ADD COLUMN {col} {col_type}")
+                        logging.info(f"Da them cot '{col}' vao bang 'custom_roles'.")
 
                 conn.commit()
         logging.info("Database PostgreSQL khoi tao thanh cong.")
@@ -132,7 +138,7 @@ def get_guild_users(guild_id):
 def get_user_profile(user_id, guild_id):
     # lay profile chi tiet
     query = """
-    SELECT u.*, cr.role_id, cr.role_name, cr.role_color
+    SELECT u.*, cr.role_id, cr.role_name, cr.role_color, cr.role_style, cr.gradient_color_1, cr.gradient_color_2
     FROM users u
     LEFT JOIN custom_roles cr ON u.user_id = cr.user_id AND u.guild_id = cr.guild_id
     WHERE u.user_id = %s AND u.guild_id = %s;
@@ -163,15 +169,19 @@ def get_custom_role(user_id, guild_id):
 def get_all_custom_roles_for_guild(guild_id):
     return execute_query("SELECT user_id, role_id FROM custom_roles WHERE guild_id = %s", (guild_id,), fetch='all')
 
-def add_or_update_custom_role(user_id, guild_id, role_id, role_name, role_color):
+def add_or_update_custom_role(user_id, guild_id, role_id, role_name, role_color, role_style=None, color1=None, color2=None):
     query = """
-    INSERT INTO custom_roles (user_id, guild_id, role_id, role_name, role_color) VALUES (%s, %s, %s, %s, %s)
+    INSERT INTO custom_roles (user_id, guild_id, role_id, role_name, role_color, role_style, gradient_color_1, gradient_color_2) 
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
     ON CONFLICT (user_id, guild_id) DO UPDATE SET
         role_id = EXCLUDED.role_id,
         role_name = EXCLUDED.role_name,
-        role_color = EXCLUDED.role_color;
+        role_color = EXCLUDED.role_color,
+        role_style = EXCLUDED.role_style,
+        gradient_color_1 = EXCLUDED.gradient_color_1,
+        gradient_color_2 = EXCLUDED.gradient_color_2;
     """
-    execute_query(query, (user_id, guild_id, role_id, role_name, role_color))
+    execute_query(query, (user_id, guild_id, role_id, role_name, role_color, role_style, color1, color2))
 
 def delete_custom_role_data(user_id, guild_id):
     execute_query("DELETE FROM custom_roles WHERE user_id = %s AND guild_id = %s", (user_id, guild_id))
