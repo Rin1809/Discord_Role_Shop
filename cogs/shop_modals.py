@@ -188,14 +188,14 @@ class SellModal(Modal, title="Bán Lại Role"):
             )
 
 class CustomRoleModal(Modal):
-    def __init__(self, bot, guild_id: int, guild_config, style: str, is_booster: bool, creation_price=None, role_to_edit: discord.Role = None):
-        super().__init__(title=f"Tạo / Sửa Role: {style}")
+    def __init__(self, bot, guild_id: int, guild_config, style: str, is_booster: bool, min_creation_price=None, role_to_edit: discord.Role = None):
+        super().__init__(title=f"Tạo / Sửa Role: {style if is_booster else 'Thường'}")
         self.bot = bot
         self.guild_id = guild_id
         self.guild_config = guild_config
         self.style = style
         self.is_booster = is_booster
-        self.creation_price = creation_price
+        self.min_creation_price = min_creation_price
         self.role_to_edit = role_to_edit
         self.embed_color = discord.Color(int(str(guild_config.get('EMBED_COLOR', '#ff00af')).lstrip('#'), 16))
 
@@ -217,17 +217,23 @@ class CustomRoleModal(Modal):
                     default=str(role_to_edit.color) if role_to_edit and self.style == "Solid" else "#ff00af"
                 ))
         else:
-             self.add_item(TextInput(
+            # role thuong
+            self.add_item(TextInput(
                 label="Mã màu HEX (ví dụ: #ff00af)",
                 custom_id="custom_role_color",
                 default=str(role_to_edit.color) if role_to_edit else "#ffaaaa"
+            ))
+            self.add_item(TextInput(
+                label=f"Giá bạn trả (tối thiểu {min_creation_price:,} coin)",
+                placeholder="Giá càng cao, role trong shop càng đắt...",
+                custom_id="creation_bid"
             ))
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True, thinking=True)
 
         role_name = self.children[0].value
-        color1_str, color2_str = None, None
+        color1_str, color2_str, bid_str = None, None, None
         
         if self.is_booster and self.style == "Gradient":
             color1_str = self.children[1].value
@@ -239,6 +245,9 @@ class CustomRoleModal(Modal):
             role_color_str = self.children[1].value
             if not is_valid_hex_color(role_color_str):
                 return await interaction.followup.send("Mã màu HEX không hợp lệ.", ephemeral=True)
+        
+        if not self.is_booster:
+            bid_str = self.children[2].value
 
         color_int = int(role_color_str.lstrip('#'), 16)
         new_color = discord.Color(color_int)
@@ -249,7 +258,7 @@ class CustomRoleModal(Modal):
 
         user_data = db.get_or_create_user(interaction.user.id, guild.id)
 
-        # TH: sua role
+        # TH: sua role (chi booster)
         if self.role_to_edit:
             try:
                 await self.role_to_edit.edit(name=role_name, color=new_color, reason=f"User edit request")
@@ -263,10 +272,21 @@ class CustomRoleModal(Modal):
             return
 
         # TH: tao role
-        if user_data['balance'] < self.creation_price:
-            return await interaction.followup.send(f"Bạn không đủ coin! Cần **{self.creation_price} coin** nhưng bạn chỉ có **{user_data['balance']}**.", ephemeral=True)
+        creation_price = 0
+        if self.is_booster:
+            creation_price = self.guild_config.get('CUSTOM_ROLE_CONFIG', {}).get('PRICE', 1000)
+        else:
+            try:
+                creation_price = int(bid_str)
+                if creation_price < self.min_creation_price:
+                    return await interaction.followup.send(f"Giá bạn trả phải ít nhất là **{self.min_creation_price:,} coin**.", ephemeral=True)
+            except (ValueError, TypeError):
+                return await interaction.followup.send("Vui lòng nhập một số hợp lệ cho giá tiền.", ephemeral=True)
 
-        new_balance = user_data['balance'] - self.creation_price
+        if user_data['balance'] < creation_price:
+            return await interaction.followup.send(f"Bạn không đủ coin! Cần **{creation_price:,} coin** nhưng bạn chỉ có **{user_data['balance']:,}**.", ephemeral=True)
+
+        new_balance = user_data['balance'] - creation_price
 
         try:
             member = guild.get_member(interaction.user.id)
@@ -279,7 +299,7 @@ class CustomRoleModal(Modal):
             db.log_transaction(
                 guild_id=guild.id, user_id=interaction.user.id,
                 transaction_type='create_custom_role', item_name=role_name,
-                amount_changed=-self.creation_price, new_balance=new_balance
+                amount_changed=-creation_price, new_balance=new_balance
             )
 
             if self.is_booster:
@@ -298,8 +318,12 @@ class CustomRoleModal(Modal):
                 await self.notify_admin(interaction, "tạo mới")
                 await interaction.followup.send("✅ Yêu cầu của bạn đã được gửi đến admin để thiết lập style. Role cơ bản đã được tạo và gán.", ephemeral=True)
             else:
-                purchase_price = self.guild_config.get('CUSTOM_ROLE_CONFIG', {}).get('DEFAULT_PURCHASE_PRICE', 500)
-                db.add_role_to_shop(new_role.id, guild.id, purchase_price)
+                # tinh gia shop va luu
+                regular_config = self.guild_config.get('REGULAR_USER_ROLE_CREATION', {})
+                multiplier = regular_config.get('SHOP_PRICE_MULTIPLIER', 1.2)
+                shop_price = int(creation_price * multiplier)
+
+                db.add_role_to_shop(new_role.id, guild.id, shop_price, creator_id=interaction.user.id, creation_price=creation_price)
                 await interaction.followup.send(f"✅ Bạn đã tạo thành công role **{role_name}**! Role này giờ cũng có sẵn trong shop cho người khác mua.", ephemeral=True)
 
             await member.add_roles(new_role)

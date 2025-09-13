@@ -1,7 +1,7 @@
 import discord
 from discord.ui import Button, View, Select
 from database import database as db
-from .shop_modals import PurchaseModal, SellModal, CustomRoleModal
+from .shop_modals import CustomRoleModal, PurchaseModal, SellModal
 import math
 
 ROLES_PER_PAGE = 5
@@ -80,6 +80,10 @@ class PaginatedRoleListView(View):
                 role = self.interaction.guild.get_role(role_data['role_id'])
                 if role:
                     role_list_str += f"### {start_index + i + 1}. {role.mention}\n> **Giá:** `{role_data['price']}` 🪙\n"
+                    if creator_id := role_data.get('creator_id'):
+                        creator = self.interaction.guild.get_member(creator_id)
+                        creator_mention = creator.mention if creator else f"ID: {creator_id}"
+                        role_list_str += f"> **Người tạo:** {creator_mention}\n"
             
             base_desc = self.messages.get('SHOP_ROLES_DESC', '')
             embed.description = (base_desc + "\n\n" + role_list_str) if base_desc else role_list_str
@@ -152,15 +156,28 @@ class RoleListSelect(Select):
             description=f"Đây là thông tin chi tiết về role bạn đã chọn.",
             color=role.color if role.color.value != 0 else self.embed_color
         )
-        if interaction.guild.icon:
-            embed.set_thumbnail(url=interaction.guild.icon.url)
+        
+        # logic avatar
+        creator_id = role_data.get('creator_id')
+        if creator_id:
+            creator = interaction.guild.get_member(creator_id)
+            if creator:
+                embed.set_thumbnail(url=creator.display_avatar.url)
+                embed.add_field(name="Người Tạo", value=creator.mention, inline=True)
+            else:
+                if interaction.guild.icon:
+                    embed.set_thumbnail(url=interaction.guild.icon.url)
+                embed.add_field(name="Người Tạo", value=f"ID: {creator_id} (đã rời)", inline=True)
+        else:
+            if interaction.guild.icon:
+                embed.set_thumbnail(url=interaction.guild.icon.url)
             
         embed.add_field(name="Role", value=role.mention, inline=True)
         embed.add_field(name="Giá Mua", value=f"```{role_data['price']:,} coin```", inline=True)
         
         refund_percentage = self.guild_config.get('SELL_REFUND_PERCENTAGE', 0.65)
         refund_amount = int(role_data['price'] * refund_percentage)
-        embed.add_field(name="Bán Lại", value=f"```{refund_amount:,} coin ({refund_percentage:.0%})```", inline=True)
+        embed.add_field(name="Bán Lại", value=f"```{refund_amount:,} coin ({refund_percentage:.0%})```", inline=False)
         
         embed.set_footer(text=f"Sử dụng nút Mua/Bán và nhập số thứ tự tương ứng để giao dịch.")
         
@@ -243,7 +260,6 @@ class ManageCustomRoleActionSelect(Select):
     async def callback(self, interaction: discord.Interaction):
         action = self.values[0]
         
-        # fix: lay member obj tu guild
         guild = self.bot.get_guild(self.guild_id)
         if not guild:
             await interaction.response.send_message("Lỗi: Không tìm thấy server. Vui lòng thử lại.", ephemeral=True)
@@ -258,10 +274,10 @@ class ManageCustomRoleActionSelect(Select):
 
         if action == "edit":
             if is_booster:
-                view = CustomRoleStyleSelectView(bot=self.bot, guild_config=self.guild_config, guild_id=self.guild_id, role_to_edit=self.role_to_edit, creation_price=None, is_booster=True)
+                view = CustomRoleStyleSelectView(bot=self.bot, guild_config=self.guild_config, guild_id=self.guild_id, role_to_edit=self.role_to_edit, is_booster=True)
                 await interaction.response.send_message("Vui lòng chọn style bạn muốn đổi sang:", view=view, ephemeral=True)
             else:
-                modal = CustomRoleModal(bot=self.bot, guild_id=self.guild_id, guild_config=self.guild_config, style="Solid", is_booster=False, role_to_edit=self.role_to_edit, creation_price=None)
+                modal = CustomRoleModal(bot=self.bot, guild_id=self.guild_id, guild_config=self.guild_config, style="Solid", is_booster=False, role_to_edit=self.role_to_edit)
                 await interaction.response.send_modal(modal)
 
         elif action == "delete":
@@ -394,11 +410,11 @@ class AccountView(View):
 
 
 class CustomRoleStyleSelect(Select):
-    def __init__(self, bot, guild_config, guild_id, creation_price, is_booster, role_to_edit=None):
+    def __init__(self, bot, guild_config, guild_id, is_booster, min_creation_price=None, role_to_edit=None):
         self.bot = bot
         self.guild_config = guild_config
         self.guild_id = guild_id
-        self.creation_price = creation_price
+        self.min_creation_price = min_creation_price
         self.is_booster = is_booster
         self.role_to_edit = role_to_edit
 
@@ -416,16 +432,16 @@ class CustomRoleStyleSelect(Select):
             guild_id=self.guild_id, 
             guild_config=self.guild_config, 
             style=selected_style,
-            creation_price=self.creation_price,
+            min_creation_price=self.min_creation_price,
             is_booster=self.is_booster,
             role_to_edit=self.role_to_edit
         )
         await interaction.response.send_modal(modal)
 
 class CustomRoleStyleSelectView(View):
-    def __init__(self, bot, guild_config, guild_id, creation_price, is_booster, role_to_edit=None):
+    def __init__(self, bot, guild_config, guild_id, is_booster, min_creation_price=None, role_to_edit=None):
         super().__init__(timeout=180)
-        self.add_item(CustomRoleStyleSelect(bot, guild_config, guild_id, creation_price, is_booster, role_to_edit))
+        self.add_item(CustomRoleStyleSelect(bot, guild_config, guild_id, is_booster, min_creation_price, role_to_edit))
 
 class ShopActionSelect(Select):
     def __init__(self, bot):
@@ -506,7 +522,7 @@ class ShopActionSelect(Select):
                 msg = messages.get('CUSTOM_ROLE_NO_COIN', "Bạn không đủ coin! Cần {price} coin để tạo role nhưng bạn chỉ có {balance}.").format(price=creation_price, balance=user_data['balance'])
                 return await interaction.followup.send(msg, ephemeral=True)
 
-            view = CustomRoleStyleSelectView(bot=self.bot, guild_config=guild_config, guild_id=interaction.guild.id, creation_price=creation_price, is_booster=True)
+            view = CustomRoleStyleSelectView(bot=self.bot, guild_config=guild_config, guild_id=interaction.guild.id, is_booster=True)
             await interaction.followup.send("✨ Vui lòng chọn style bạn muốn cho role đặc biệt của mình:", view=view, ephemeral=True)
 
         elif action == "custom_role_member":
@@ -515,13 +531,13 @@ class ShopActionSelect(Select):
                 return await interaction.response.send_message("Tính năng tạo role cho thành viên thường đang tắt.", ephemeral=True)
 
             user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
-            creation_price = int(regular_config.get('CREATION_PRICE', 2000))
+            min_creation_price = int(regular_config.get('CREATION_PRICE', 2000))
 
-            if user_data['balance'] < creation_price:
-                msg = messages.get('CUSTOM_ROLE_NO_COIN', "Bạn không đủ coin! Cần {price} coin để tạo role nhưng bạn chỉ có {balance}.").format(price=creation_price, balance=user_data['balance'])
+            if user_data['balance'] < min_creation_price:
+                msg = messages.get('CUSTOM_ROLE_NO_COIN', "Bạn không đủ coin! Cần {price} coin để tạo role nhưng bạn chỉ có {balance}.").format(price=min_creation_price, balance=user_data['balance'])
                 return await interaction.response.send_message(msg, ephemeral=True)
             
-            modal = CustomRoleModal(bot=self.bot, guild_id=interaction.guild.id, guild_config=guild_config, style="Solid", creation_price=creation_price, is_booster=False)
+            modal = CustomRoleModal(bot=self.bot, guild_id=interaction.guild.id, guild_config=guild_config, style="Solid", min_creation_price=min_creation_price, is_booster=False)
             await interaction.response.send_modal(modal)
 
 

@@ -42,7 +42,9 @@ def init_db(database_url: str):
                     CREATE TABLE IF NOT EXISTS shop_roles (
                         role_id BIGINT PRIMARY KEY,
                         guild_id BIGINT NOT NULL,
-                        price INTEGER NOT NULL
+                        price INTEGER NOT NULL,
+                        creator_id BIGINT,
+                        creation_price INTEGER
                     )
                 ''')
                 cur.execute('''
@@ -75,18 +77,25 @@ def init_db(database_url: str):
                 ''')
 
                 # kiem tra & them cot moi vao bang custom_roles
-                cols_to_add = {
-                    'role_style': 'TEXT',
-                    'gradient_color_1': 'TEXT',
-                    'gradient_color_2': 'TEXT'
-                }
                 cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'custom_roles'")
-                existing_cols = [row[0] for row in cur.fetchall()]
+                existing_custom_cols = [row[0] for row in cur.fetchall()]
                 
-                for col, col_type in cols_to_add.items():
-                    if col not in existing_cols:
+                custom_cols_to_add = {
+                    'role_style': 'TEXT', 'gradient_color_1': 'TEXT', 'gradient_color_2': 'TEXT'
+                }
+                for col, col_type in custom_cols_to_add.items():
+                    if col not in existing_custom_cols:
                         cur.execute(f"ALTER TABLE custom_roles ADD COLUMN {col} {col_type}")
-                        logging.info(f"Da them cot '{col}' vao bang 'custom_roles'.")
+
+                # kiem tra & them cot moi vao bang shop_roles
+                cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'shop_roles'")
+                existing_shop_cols = [row[0] for row in cur.fetchall()]
+                shop_cols_to_add = {
+                    'creator_id': 'BIGINT', 'creation_price': 'INTEGER'
+                }
+                for col, col_type in shop_cols_to_add.items():
+                    if col not in existing_shop_cols:
+                        cur.execute(f"ALTER TABLE shop_roles ADD COLUMN {col} {col_type}")
 
                 conn.commit()
         logging.info("Database PostgreSQL khoi tao thanh cong.")
@@ -147,14 +156,16 @@ def get_user_profile(user_id, guild_id):
 
 
 # Shop Role Functions
-def add_role_to_shop(role_id, guild_id, price):
+def add_role_to_shop(role_id, guild_id, price, creator_id=None, creation_price=None):
     query = """
-    INSERT INTO shop_roles (role_id, guild_id, price) VALUES (%s, %s, %s)
+    INSERT INTO shop_roles (role_id, guild_id, price, creator_id, creation_price) VALUES (%s, %s, %s, %s, %s)
     ON CONFLICT (role_id) DO UPDATE SET
         guild_id = EXCLUDED.guild_id,
-        price = EXCLUDED.price;
+        price = EXCLUDED.price,
+        creator_id = EXCLUDED.creator_id,
+        creation_price = EXCLUDED.creation_price;
     """
-    execute_query(query, (role_id, guild_id, price))
+    execute_query(query, (role_id, guild_id, price, creator_id, creation_price))
 
 def remove_role_from_shop(role_id, guild_id):
     execute_query("DELETE FROM shop_roles WHERE role_id = %s AND guild_id = %s", (role_id, guild_id))
