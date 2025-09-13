@@ -242,7 +242,19 @@ class ManageCustomRoleActionSelect(Select):
 
     async def callback(self, interaction: discord.Interaction):
         action = self.values[0]
-        is_booster = interaction.user.premium_since is not None
+        
+        # fix: lay member obj tu guild
+        guild = self.bot.get_guild(self.guild_id)
+        if not guild:
+            await interaction.response.send_message("Lỗi: Không tìm thấy server. Vui lòng thử lại.", ephemeral=True)
+            return
+
+        member = guild.get_member(interaction.user.id)
+        if not member:
+            await interaction.response.send_message("Lỗi: Không tìm thấy bạn trong server. Vui lòng thử lại.", ephemeral=True)
+            return
+
+        is_booster = member.premium_since is not None
 
         if action == "edit":
             if is_booster:
@@ -519,7 +531,7 @@ class ShopView(View):
         self.bot = bot
         self.add_item(ShopActionSelect(bot=self.bot))
 
-    @discord.ui.button(label="Tài Khoản Của Tôi", style=discord.ButtonStyle.secondary, custom_id="shop_view:account", emoji="<a:z_cat_yolo:1326542766330740818>")
+    @discord.ui.button(label="Cách sử dụng", style=discord.ButtonStyle.secondary, custom_id="shop_view:account", emoji="<a:z_cat_yolo:1326542766330740818>")
     async def account_button_callback(self, interaction: discord.Interaction, button: Button):
         await interaction.response.defer(ephemeral=True)
 

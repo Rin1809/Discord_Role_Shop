@@ -325,7 +325,7 @@ class CustomRoleModal(Modal):
         role_name = self.children[0].value
         embed = discord.Embed(
             title="Yêu Cầu Chỉnh Sửa Role Style",
-            description=f"Thành viên {interaction.user.mention} vừa **{action_type}** một role tùy chỉnh và yêu cầu set style.",
+            description=f"Member {interaction.user.mention} vừa **{action_type}** một role tùy chỉnh và yêu cầu set style.",
             color=discord.Color.gold(),
             timestamp=discord.utils.utcnow()
         )
@@ -342,7 +342,7 @@ class CustomRoleModal(Modal):
             color = self.children[1].value
             embed.add_field(name="Màu Sắc", value=f"```{color}```", inline=True)
 
-        embed.set_footer(text="Vui lòng chỉnh sửa thủ công cho thành viên.")
+        embed.set_footer(text="Thêm Role cho người ta đi.")
 
         try:
             await channel.send(embed=embed)
