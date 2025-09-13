@@ -195,7 +195,7 @@ class CustomRoleModal(Modal):
         self.guild_config = guild_config
         self.style = style
         self.is_booster = is_booster
-        self.creation_price = creation_price # chi dung khi tao
+        self.creation_price = creation_price
         self.role_to_edit = role_to_edit
         self.embed_color = discord.Color(int(str(guild_config.get('EMBED_COLOR', '#ff00af')).lstrip('#'), 16))
 
@@ -210,7 +210,7 @@ class CustomRoleModal(Modal):
             if self.style == "Gradient":
                 self.add_item(TextInput(label="Màu 1 (HEX, vd: #ff00af)", custom_id="custom_role_color1", default="#ffaaaa"))
                 self.add_item(TextInput(label="Màu 2 (HEX, vd: #5865F2)", custom_id="custom_role_color2", default="#89b4fa"))
-            else: # Solid hoac Holographic
+            else: 
                 self.add_item(TextInput(
                     label="Mã màu HEX (ví dụ: #ff00af)",
                     custom_id="custom_role_color",
@@ -298,7 +298,6 @@ class CustomRoleModal(Modal):
                 await self.notify_admin(interaction, "tạo mới")
                 await interaction.followup.send("✅ Yêu cầu của bạn đã được gửi đến admin để thiết lập style. Role cơ bản đã được tạo và gán.", ephemeral=True)
             else:
-                # user bthg -> them vao shop
                 purchase_price = self.guild_config.get('CUSTOM_ROLE_CONFIG', {}).get('DEFAULT_PURCHASE_PRICE', 500)
                 db.add_role_to_shop(new_role.id, guild.id, purchase_price)
                 await interaction.followup.send(f"✅ Bạn đã tạo thành công role **{role_name}**! Role này giờ cũng có sẵn trong shop cho người khác mua.", ephemeral=True)
@@ -321,6 +320,20 @@ class CustomRoleModal(Modal):
         if not channel:
             logging.warning(f"Cannot find admin channel {admin_channel_id}")
             return
+        
+        # xu ly ping
+        ping_content = ""
+        ping_role_ids = self.guild_config.get('CUSTOM_ROLE_PING_ROLES', [])
+        if ping_role_ids:
+            guild = self.bot.get_guild(self.guild_id)
+            if guild:
+                mentions = []
+                for role_id in ping_role_ids:
+                    role = guild.get_role(int(role_id))
+                    if role:
+                        mentions.append(role.mention)
+                if mentions:
+                    ping_content = " ".join(mentions)
 
         role_name = self.children[0].value
         embed = discord.Embed(
@@ -345,7 +358,7 @@ class CustomRoleModal(Modal):
         embed.set_footer(text="Thêm Role cho người ta đi.")
 
         try:
-            await channel.send(embed=embed)
+            await channel.send(content=ping_content, embed=embed)
         except discord.Forbidden:
             logging.error(f"Cannot send message to admin channel {admin_channel_id}")
 
