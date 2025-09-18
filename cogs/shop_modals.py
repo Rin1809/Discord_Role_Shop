@@ -9,10 +9,9 @@ import math
 def is_valid_hex_color(s):
     return re.match(r'^#?([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$', s) is not None
 
-# SUA LAI EMOJI SELECT DE NHAN TRANG
+# emoji select menu
 class EmojiSelect(Select):
     def __init__(self, emojis, page=0):
-        # lay 25 emoji cho trang hien tai
         start_index = page * 25
         end_index = start_index + 25
         current_emojis = emojis[start_index:end_index]
@@ -31,10 +30,9 @@ class EmojiSelect(Select):
         if self.values[0] == "none":
             await interaction.response.defer()
             return
-        # truy cap ham _finalize_role_creation tu view cha (EmojiPageView -> RoleCreationProcessView)
         await self.view.creation_view._finalize_role_creation(interaction, icon_id=self.values[0])
 
-# VIEW MOI DE PHAN TRANG EMOJI
+# view phan trang emoji
 class EmojiPageView(View):
     def __init__(self, emojis, creation_view):
         super().__init__(timeout=180)
@@ -68,6 +66,63 @@ class EmojiPageView(View):
         await interaction.response.edit_message(view=self)
 
 
+# menu chon kieu icon
+class IconActionSelect(Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label="Chọn Emoji từ Server", value="select_emoji", emoji="😀"),
+            discord.SelectOption(label="Tải Ảnh Lên", value="upload_image", emoji="🖼️"),
+            discord.SelectOption(label="Tiếp Tục (Không có Icon)", value="no_icon", emoji="✅"),
+            discord.SelectOption(label="Hủy Bỏ", value="cancel", emoji="✖️"),
+        ]
+        super().__init__(placeholder="Chọn một tùy chọn cho icon...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        action = self.values[0]
+        # self.view la RoleCreationProcessView
+        
+        if action == "select_emoji":
+            sorted_emojis = sorted(interaction.guild.emojis, key=lambda e: not e.animated)
+            if not sorted_emojis:
+                await interaction.response.send_message("Server này không có emoji nào.", ephemeral=True)
+                return
+            
+            page_view = EmojiPageView(emojis=sorted_emojis, creation_view=self.view)
+            await interaction.response.edit_message(content="Vui lòng chọn một emoji:", view=page_view)
+
+        elif action == "upload_image":
+            await interaction.response.edit_message(
+                content="**Vui lòng gửi ảnh bạn muốn dùng làm icon (dưới 256KB).**\nBạn có 60 giây.", 
+                view=None
+            )
+
+            def check(m):
+                return m.author == interaction.user and m.channel == interaction.channel and m.attachments
+            
+            try:
+                msg = await self.view.bot.wait_for('message', check=check, timeout=60.0)
+                attachment = msg.attachments[0]
+                if attachment.size > 256 * 1024:
+                    try: await msg.delete()
+                    except: pass
+                    await interaction.edit_original_response(content="❌ Ảnh quá lớn. Vui lòng thử lại.", view=None)
+                    return
+                
+                icon_bytes = await attachment.read()
+                try: await msg.delete()
+                except: pass
+                
+                await self.view._finalize_role_creation(interaction, icon=icon_bytes)
+
+            except asyncio.TimeoutError:
+                await interaction.edit_original_response(content="⏰ Hết thời gian. Vui lòng thử lại.", view=None)
+        
+        elif action == "no_icon":
+            await self.view._finalize_role_creation(interaction, icon=None)
+
+        elif action == "cancel":
+            await interaction.response.edit_message(content="Đã hủy thao tác.", view=None)
+
 class RoleCreationProcessView(View):
     def __init__(self, bot, guild_config, role_name, color_int, style, color1_str, color2_str, creation_price, is_booster, role_to_edit):
         super().__init__(timeout=300)
@@ -82,6 +137,7 @@ class RoleCreationProcessView(View):
         self.is_booster = is_booster
         self.role_to_edit = role_to_edit
         self.embed_color = discord.Color(int(str(guild_config.get('EMBED_COLOR', '#ff00af')).lstrip('#'), 16))
+        self.add_item(IconActionSelect())
 
     async def _finalize_role_creation(self, interaction: discord.Interaction, icon=None, icon_id=None):
         await interaction.response.edit_message(content="Đang xử lý...", view=None)
@@ -176,50 +232,6 @@ class RoleCreationProcessView(View):
 
         embed.set_footer(text="Admin check giup.")
         await channel.send(content=ping_content, embed=embed)
-
-    @discord.ui.button(label="Tải ảnh lên", style=discord.ButtonStyle.primary, emoji="🖼️")
-    async def upload_icon(self, interaction: discord.Interaction, button: Button):
-        for item in self.children: item.disabled = True
-        await interaction.response.edit_message(content="**Vui lòng gửi ảnh bạn muốn dùng làm icon (dưới 256KB).**\nBạn có 60 giây.", view=self)
-
-        def check(m):
-            return m.author == interaction.user and m.channel == interaction.channel and m.attachments
-        
-        try:
-            msg = await self.bot.wait_for('message', check=check, timeout=60.0)
-            attachment = msg.attachments[0]
-            if attachment.size > 256 * 1024:
-                try: await msg.delete()
-                except: pass
-                await interaction.edit_original_response(content="❌ Ảnh quá lớn (phải dưới 256KB). Vui lòng thử lại từ đầu.", view=None)
-                return
-            
-            icon_bytes = await attachment.read()
-            try: await msg.delete()
-            except: pass
-            
-            await self._finalize_role_creation(interaction, icon=icon_bytes)
-
-        except asyncio.TimeoutError:
-            await interaction.edit_original_response(content="⏰ Hết thời gian. Vui lòng thử lại từ đầu.", view=None)
-
-    @discord.ui.button(label="Chọn Emoji", style=discord.ButtonStyle.secondary, emoji="😀")
-    async def select_emoji(self, interaction: discord.Interaction, button: Button):
-        # SAP XEP LAI DANH SACH EMOJI: TINH TRUOC, DONG SAU
-        sorted_emojis = sorted(interaction.guild.emojis, key=lambda e: e.animated)
-        
-        if not sorted_emojis:
-            await interaction.response.send_message("Server này không có emoji nào để chọn.", ephemeral=True)
-            return
-        
-        # TAO VIEW PHAN TRANG
-        page_view = EmojiPageView(emojis=sorted_emojis, creation_view=self)
-        await interaction.response.edit_message(content="Vui lòng chọn một emoji từ danh sách bên dưới:", view=page_view)
-
-    @discord.ui.button(label="Bỏ qua", style=discord.ButtonStyle.danger)
-    async def no_icon(self, interaction: discord.Interaction, button: Button):
-        await self._finalize_role_creation(interaction, icon=None)
-
 
 class PurchaseModal(Modal, title="Mua Role"):
     def __init__(self, bot):
@@ -492,7 +504,7 @@ class CustomRoleModal(Modal):
         )
         
         await interaction.followup.send(
-            "<:MenheraFlower:1406458230317645906> **Bước 2/2: Chọn Icon cho Role**\nBạn có muốn thêm icon cho role không? (Tùy chọn)",
+            "<:MenheraFlower:1406458230317645906> **Bước cuối: Thêm Icon cho Role (Tùy chọn)**\nSử dụng menu bên dưới để thêm icon hoặc tạo role ngay.",
             view=view,
             ephemeral=True
         )
