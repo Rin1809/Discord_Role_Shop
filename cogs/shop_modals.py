@@ -38,7 +38,7 @@ class EmojiPageView(View):
     def __init__(self, emojis, creation_view):
         super().__init__(timeout=180)
         self.emojis = emojis
-        self.creation_view = creation_view # luu view goc
+        self.creation_view = creation_view
         self.current_page = 0
         self.total_pages = math.ceil(len(self.emojis) / 25)
         self.update_view()
@@ -80,7 +80,6 @@ class IconActionSelect(Select):
 
     async def callback(self, interaction: discord.Interaction):
         action = self.values[0]
-        # self.view la RoleCreationProcessView
         
         if action == "select_emoji":
             sorted_emojis = sorted(interaction.guild.emojis, key=lambda e: not e.animated)
@@ -92,14 +91,13 @@ class IconActionSelect(Select):
             await interaction.response.edit_message(content="Vui lòng chọn một emoji:", view=page_view)
 
         elif action == "upload_image":
-            # nang cap
             await interaction.response.edit_message(content="<a:loading:1274398154694467614> Đang tạo thread riêng tư cho bạn...", view=None)
             
             try:
                 thread = await interaction.channel.create_thread(
                     name=f"Tải ảnh icon cho {interaction.user.display_name}",
                     type=discord.ChannelType.private_thread,
-                    auto_archive_duration=60 # 1h
+                    auto_archive_duration=60
                 )
                 await thread.add_user(interaction.user)
             except Exception as e:
@@ -175,7 +173,6 @@ class RoleCreationProcessView(View):
         self.add_item(IconActionSelect())
 
     async def _finalize_role_creation(self, interaction: discord.Interaction, icon=None, icon_id=None, thread: discord.Thread = None):
-        # neu tu thread, gui loading vao thread
         if thread:
             await thread.send("<a:loading:1274398154694467614> Đang xử lý, vui lòng chờ...")
         else:
@@ -183,6 +180,7 @@ class RoleCreationProcessView(View):
 
         final_icon_data = icon
         guild = interaction.guild
+        new_role = None
 
         if icon_id:
             emoji_obj = guild.get_emoji(int(icon_id))
@@ -215,62 +213,65 @@ class RoleCreationProcessView(View):
                     await thread.edit(archived=True, locked=True)
                 else: await interaction.edit_original_response(content=msg_content, view=None)
                 return
-
-            user_data = db.get_or_create_user(interaction.user.id, guild.id)
-            new_balance = user_data['balance'] - self.creation_price
             
+            # buoc 1: thuc hien tren discord
             new_role = await guild.create_role(
                 name=self.role_name, color=new_color, display_icon=final_icon_data, reason=f"Custom role for {interaction.user.name}"
             )
-            
-            db.update_user_data(interaction.user.id, guild.id, balance=new_balance)
-            db.log_transaction(guild.id, interaction.user.id, 'create_custom_role', self.role_name, -self.creation_price, new_balance)
+            await interaction.user.add_roles(new_role)
 
             if self.is_booster:
                 try:
                     target_position = guild.me.top_role.position - 1
                     await new_role.edit(position=target_position)
                 except Exception: pass
-                
+            
+            # buoc 2: neu thanh cong, cap nhat database
+            user_data = db.get_or_create_user(interaction.user.id, guild.id)
+            new_balance = user_data['balance'] - self.creation_price
+            db.update_user_data(interaction.user.id, guild.id, balance=new_balance)
+            db.log_transaction(guild.id, interaction.user.id, 'create_custom_role', self.role_name, -self.creation_price, new_balance)
+
+            if self.is_booster:
                 db.add_or_update_custom_role(interaction.user.id, guild.id, new_role.id, self.role_name, f"#{self.color_int:06x}", self.style, self.color1_str, self.color2_str)
                 await self.notify_admin(interaction, "tạo mới")
-                
                 msg_content = "✅ Yêu cầu của bạn đã được gửi đến admin để thiết lập style. Role cơ bản đã được tạo và gán."
-                if thread: await thread.send(msg_content)
-                else: await interaction.edit_original_response(content=msg_content, view=None)
             else:
                 regular_config = self.guild_config.get('REGULAR_USER_ROLE_CREATION', {})
                 multiplier = regular_config.get('SHOP_PRICE_MULTIPLIER', 1.2)
                 shop_price = int(self.creation_price * multiplier)
                 db.add_role_to_shop(new_role.id, guild.id, shop_price, creator_id=interaction.user.id, creation_price=self.creation_price)
-                
                 msg_content = f"✅ Bạn đã tạo thành công role **{self.role_name}**! Role này giờ cũng có sẵn trong shop."
-                if thread: await thread.send(msg_content)
-                else: await interaction.edit_original_response(content=msg_content, view=None)
 
-            await interaction.user.add_roles(new_role)
-            if thread: await thread.edit(archived=True, locked=True)
+            if thread:
+                await thread.send(msg_content)
+                await thread.edit(archived=True, locked=True)
+            else: await interaction.edit_original_response(content=msg_content, view=None)
 
-        except discord.Forbidden:
-            msg_content = "❌ Lỗi quyền! Tôi không thể tạo/sửa/gán role. Giao dịch đã hủy."
+        except (discord.Forbidden, discord.HTTPException) as e:
+            # hoan tac neu da tao role
+            if new_role:
+                await new_role.delete(reason="Giao dich that bai, hoan tac")
+            
+            error_msg = "❌ Lỗi quyền! Tôi không thể tạo/sửa/gán role. Giao dịch đã được hủy bỏ và không trừ tiền."
+            if isinstance(e, discord.HTTPException):
+                logging.error(f"Loi HTTP khi tao role: {e.status} - {e.text}")
+                error_msg = f"❌ Đã xảy ra lỗi từ Discord. Giao dịch đã được hủy bỏ. (Chi tiết: {e.text})"
+
             if thread: 
-                await thread.send(msg_content)
+                await thread.send(error_msg)
                 await thread.edit(archived=True, locked=True)
-            else: await interaction.edit_original_response(content=msg_content, view=None)
-        except discord.HTTPException as e:
-            logging.error(f"Loi HTTP khi tao role: {e.status} - {e.text}")
-            msg_content = f"❌ Đã xảy ra lỗi từ Discord khi tạo role. Vui lòng thử lại. (Chi tiết: {e.text})"
-            if thread:
-                await thread.send(msg_content)
-                await thread.edit(archived=True, locked=True)
-            else: await interaction.edit_original_response(content=msg_content, view=None)
+            else: await interaction.edit_original_response(content=error_msg, view=None)
         except Exception as e:
+            if new_role:
+                await new_role.delete(reason="Giao dich that bai, hoan tac")
             logging.error(f"Loi khong mong muon: {e}")
-            msg_content = f"Lỗi không mong muốn, vui lòng liên hệ admin."
+            msg_content = f"Lỗi không mong muốn, vui lòng liên hệ admin. Giao dịch đã hủy."
             if thread:
                 await thread.send(msg_content)
                 await thread.edit(archived=True, locked=True)
             else: await interaction.edit_original_response(content=msg_content, view=None)
+
 
     async def notify_admin(self, interaction: discord.Interaction, action_type: str):
         admin_channel_id = self.guild_config.get('ADMIN_LOG_CHANNEL_ID')

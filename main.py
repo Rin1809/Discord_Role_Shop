@@ -3,6 +3,9 @@ from discord.ext import commands
 import json
 import os
 import logging
+import threading
+import asyncio
+import socketio
 from database import database as db
 from cogs.shop_views import ShopView
 
@@ -32,15 +35,46 @@ class ShopBot(commands.Bot):
         self.persistent_views_added = False
         
     async def reload_guild_config(self, guild_id: int):
-        # Ham load lai config cho 1 guild
+        # ham nay an toan de goi tu thread khac
         logging.info(f"Reloading config cho guild {guild_id}...")
-        config = db.get_guild_config(guild_id)
-        if config:
-            self.guild_configs[str(guild_id)] = config
-            logging.info(f"Config cho guild {guild_id} da duoc reload.")
-            return True
-        logging.warning(f"Khong tim thay config cho guild {guild_id} de reload.")
-        return False
+        try:
+            guild_id_int = int(guild_id)
+            config = db.get_guild_config(guild_id_int)
+            if config:
+                self.guild_configs[str(guild_id_int)] = config
+                logging.info(f"Config cho guild {guild_id_int} da duoc reload.")
+                return True
+            logging.warning(f"Khong tim thay config cho guild {guild_id_int} de reload.")
+            return False
+        except Exception as e:
+            logging.error(f"Loi khi reload config cho guild {guild_id}: {e}")
+            return False
+
+    def setup_socketio_listener(self):
+        sio = socketio.Client()
+
+        @sio.event
+        def connect():
+            logging.info("Da ket noi toi server dashboard qua SocketIO!")
+
+        @sio.event
+        def disconnect():
+            logging.info("Da ngat ket noi voi server dashboard!")
+
+        @sio.on('config_updated')
+        def on_config_updated(data):
+            guild_id = data.get('guild_id')
+            if guild_id:
+                logging.info(f"Nhan duoc tin hieu reload config cho guild: {guild_id}")
+                asyncio.run_coroutine_threadsafe(self.reload_guild_config(guild_id), self.loop)
+        
+        try:
+            sio.connect('http://127.0.0.1:5001')
+            sio.wait()
+        except socketio.exceptions.ConnectionError as e:
+            logging.error(f"Khong the ket noi den dashboard SocketIO: {e}. Bot van hoat dong nhung se khong tu dong reload config.")
+        except Exception as e:
+            logging.error(f"Loi SocketIO client: {e}")
 
     async def setup_hook(self):
         # tai config tu db
@@ -69,6 +103,10 @@ class ShopBot(commands.Bot):
             self.add_view(ShopView(bot=self))
             self.persistent_views_added = True
             logging.info("Persistent ShopView da them.")
+
+        # khoi chay socketio listener
+        socket_thread = threading.Thread(target=self.setup_socketio_listener, daemon=True)
+        socket_thread.start()
     
     async def on_ready(self):
         logging.info(f'Logged in as {self.user} (ID: {self.user.id})')
@@ -89,7 +127,6 @@ class ShopBot(commands.Bot):
             
             inviter = guild.owner
             try:
-                # tim nguoi moi
                 async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.bot_add):
                     if entry.target.id == self.user.id:
                         inviter = entry.user

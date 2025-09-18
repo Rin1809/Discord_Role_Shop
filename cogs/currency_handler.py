@@ -2,11 +2,14 @@ import discord
 from discord.ext import commands
 from database import database as db
 import collections
+import time
 
 class CurrencyHandler(commands.Cog):
     def __init__(self, bot: commands.Bot): 
         self.bot = bot
         self.authorized_guilds = self.bot.global_config['AUTHORIZED_GUILD_IDS']
+        self.boost_count_cache = {}
+        self.BOOST_CACHE_DURATION = 300 # 5 phut
 
     def _get_boost_multiplier(self, member: discord.Member, guild_config: dict, user_data: dict) -> float:
         booster_config = guild_config.get('BOOSTER_MULTIPLIER_CONFIG', {})
@@ -15,19 +18,34 @@ class CurrencyHandler(commands.Cog):
         
         boost_count = 0
         
-        # uu tien boost ao
         fake_boosts = user_data.get('fake_boosts', 0)
         if fake_boosts > 0:
             boost_count = fake_boosts
-        # ko co thi dem boost that
         elif member and member.premium_since:
-            boost_count = sum(1 for m in member.guild.premium_subscribers if m.id == member.id)
+            # cache boost
+            cache_key = (member.guild.id, member.id)
+            now = time.time()
+            
+            if cache_key in self.boost_count_cache:
+                cached_data = self.boost_count_cache[cache_key]
+                if (now - cached_data['timestamp']) < self.BOOST_CACHE_DURATION:
+                    return cached_data['multiplier']
+
+            # tinh toan neu k co cache
+            count = sum(1 for m in member.guild.premium_subscribers if m.id == member.id)
+            boost_count = count
         
         if boost_count > 0:
             base_multiplier = booster_config.get('BASE_MULTIPLIER', 2.0)
             per_boost_addition = booster_config.get('PER_BOOST_ADDITION', 0.5)
             
             final_multiplier = base_multiplier + ((boost_count - 1) * per_boost_addition)
+
+            if member:
+                 self.boost_count_cache[(member.guild.id, member.id)] = {
+                     'multiplier': final_multiplier,
+                     'timestamp': time.time()
+                 }
             return final_multiplier
 
         return 1.0
