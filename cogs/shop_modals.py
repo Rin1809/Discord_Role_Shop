@@ -6,6 +6,7 @@ import asyncio
 import logging
 import math
 
+# ktra hex
 def is_valid_hex_color(s):
     return re.match(r'^#?([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$', s) is not None
 
@@ -71,7 +72,7 @@ class IconActionSelect(Select):
     def __init__(self):
         options = [
             discord.SelectOption(label="Chọn Emoji từ Server", value="select_emoji", emoji="😀"),
-            discord.SelectOption(label="Tải Ảnh Lên", value="upload_image", emoji="🖼️"),
+            discord.SelectOption(label="Tải Ảnh Lên (Qua Thread)", value="upload_image", emoji="🖼️"),
             discord.SelectOption(label="Tiếp Tục (Không có Icon)", value="no_icon", emoji="✅"),
             discord.SelectOption(label="Hủy Bỏ", value="cancel", emoji="✖️"),
         ]
@@ -91,31 +92,65 @@ class IconActionSelect(Select):
             await interaction.response.edit_message(content="Vui lòng chọn một emoji:", view=page_view)
 
         elif action == "upload_image":
-            await interaction.response.edit_message(
-                content="**Vui lòng gửi ảnh bạn muốn dùng làm icon (dưới 256KB).**\nBạn có 60 giây.", 
-                view=None
-            )
-
-            def check(m):
-                return m.author == interaction.user and m.channel == interaction.channel and m.attachments
+            # nang cap
+            await interaction.response.edit_message(content="<a:loading:1274398154694467614> Đang tạo thread riêng tư cho bạn...", view=None)
             
             try:
-                msg = await self.view.bot.wait_for('message', check=check, timeout=60.0)
+                thread = await interaction.channel.create_thread(
+                    name=f"Tải ảnh icon cho {interaction.user.display_name}",
+                    type=discord.ChannelType.private_thread,
+                    auto_archive_duration=60 # 1h
+                )
+                await thread.add_user(interaction.user)
+            except Exception as e:
+                logging.error(f"Loi tao thread: {e}")
+                await interaction.edit_original_response(content=f"❌ Không thể tạo thread riêng. Vui lòng thử lại hoặc liên hệ admin. Lỗi: `{e}`")
+                return
+
+            try:
+                gif1 = discord.File("asset/drag_and_drop_example.gif", filename="drag_and_drop_example.gif")
+                gif2 = discord.File("asset/upload_example.gif", filename="upload_example.gif")
+                
+                await thread.send(
+                    content=(
+                        f"Chào {interaction.user.mention}! Vui lòng tải lên ảnh bạn muốn dùng làm icon cho role.\n"
+                        f"**Yêu cầu:**\n"
+                        f"- Ảnh phải dưới `256KB`.\n"
+                        f"- Bạn có `2 phút` để gửi ảnh.\n\n"
+                        f"Bạn có thể kéo-thả hoặc dùng nút `+` để tải ảnh lên như ví dụ sau:"
+                    ),
+                    files=[gif1, gif2]
+                )
+                await interaction.edit_original_response(content=f"✅ Đã tạo một thread riêng tư. Vui lòng vào {thread.mention} để tải ảnh lên.")
+            except FileNotFoundError:
+                 await thread.send(
+                    content=(
+                        f"Chào {interaction.user.mention}! Vui lòng tải lên ảnh bạn muốn dùng làm icon cho role.\n"
+                        f"**Yêu cầu:**\n"
+                        f"- Ảnh phải dưới `256KB`.\n"
+                        f"- Bạn có `2 phút` để gửi ảnh."
+                    )
+                )
+                 await interaction.edit_original_response(content=f"✅ Đã tạo một thread riêng tư. Vui lòng vào {thread.mention} để tải ảnh lên.")
+            
+            def check(m):
+                return m.author.id == interaction.user.id and m.channel.id == thread.id and m.attachments
+            
+            try:
+                msg = await self.view.bot.wait_for('message', check=check, timeout=120.0)
                 attachment = msg.attachments[0]
+
                 if attachment.size > 256 * 1024:
-                    try: await msg.delete()
-                    except: pass
-                    await interaction.edit_original_response(content="❌ Ảnh quá lớn. Vui lòng thử lại.", view=None)
+                    await thread.send("❌ Ảnh quá lớn (phải dưới 256KB). Vui lòng thử lại thao tác tạo role.")
+                    await thread.edit(archived=True, locked=True)
                     return
                 
                 icon_bytes = await attachment.read()
-                try: await msg.delete()
-                except: pass
-                
-                await self.view._finalize_role_creation(interaction, icon=icon_bytes)
+                await self.view._finalize_role_creation(interaction, icon=icon_bytes, thread=thread)
 
             except asyncio.TimeoutError:
-                await interaction.edit_original_response(content="⏰ Hết thời gian. Vui lòng thử lại.", view=None)
+                await thread.send("⏰ Hết thời gian. Thread này sẽ được khóa.")
+                await thread.edit(archived=True, locked=True)
         
         elif action == "no_icon":
             await self.view._finalize_role_creation(interaction, icon=None)
@@ -139,8 +174,12 @@ class RoleCreationProcessView(View):
         self.embed_color = discord.Color(int(str(guild_config.get('EMBED_COLOR', '#ff00af')).lstrip('#'), 16))
         self.add_item(IconActionSelect())
 
-    async def _finalize_role_creation(self, interaction: discord.Interaction, icon=None, icon_id=None):
-        await interaction.response.edit_message(content="Đang xử lý...", view=None)
+    async def _finalize_role_creation(self, interaction: discord.Interaction, icon=None, icon_id=None, thread: discord.Thread = None):
+        # neu tu thread, gui loading vao thread
+        if thread:
+            await thread.send("<a:loading:1274398154694467614> Đang xử lý, vui lòng chờ...")
+        else:
+            await interaction.response.edit_message(content="<a:loading:1274398154694467614> Đang xử lý...", view=None)
 
         final_icon_data = icon
         guild = interaction.guild
@@ -152,10 +191,14 @@ class RoleCreationProcessView(View):
                     final_icon_data = await emoji_obj.read()
                 except Exception as e:
                     logging.error(f"Khong the tai anh emoji {emoji_obj.id}: {e}")
-                    await interaction.edit_original_response(content="❌ Lỗi: Không thể tải được dữ liệu của emoji này. Vui lòng thử lại.", view=None)
+                    msg_content = "❌ Lỗi: Không thể tải được dữ liệu của emoji này. Vui lòng thử lại."
+                    if thread: await thread.send(msg_content)
+                    else: await interaction.edit_original_response(content=msg_content, view=None)
                     return
             else:
-                await interaction.edit_original_response(content="❌ Lỗi: Không thể tìm thấy emoji này trên server. Vui lòng thử lại.", view=None)
+                msg_content = "❌ Lỗi: Không thể tìm thấy emoji này trên server. Vui lòng thử lại."
+                if thread: await thread.send(msg_content)
+                else: await interaction.edit_original_response(content=msg_content, view=None)
                 return
 
         new_color = discord.Color(self.color_int)
@@ -165,7 +208,12 @@ class RoleCreationProcessView(View):
                 await self.role_to_edit.edit(name=self.role_name, color=new_color, display_icon=final_icon_data, reason=f"User edit request")
                 db.add_or_update_custom_role(interaction.user.id, guild.id, self.role_to_edit.id, self.role_name, f"#{self.color_int:06x}", self.style, self.color1_str, self.color2_str)
                 await self.notify_admin(interaction, "sửa")
-                await interaction.edit_original_response(content=f"✅ Đã gửi yêu cầu chỉnh sửa role **{self.role_name}** đến admin. Vui lòng chờ.", view=None)
+                
+                msg_content = f"✅ Đã gửi yêu cầu chỉnh sửa role **{self.role_name}** đến admin. Vui lòng chờ."
+                if thread:
+                    await thread.send(msg_content)
+                    await thread.edit(archived=True, locked=True)
+                else: await interaction.edit_original_response(content=msg_content, view=None)
                 return
 
             user_data = db.get_or_create_user(interaction.user.id, guild.id)
@@ -186,24 +234,43 @@ class RoleCreationProcessView(View):
                 
                 db.add_or_update_custom_role(interaction.user.id, guild.id, new_role.id, self.role_name, f"#{self.color_int:06x}", self.style, self.color1_str, self.color2_str)
                 await self.notify_admin(interaction, "tạo mới")
-                await interaction.edit_original_response(content="✅ Yêu cầu của bạn đã được gửi đến admin để thiết lập style. Role cơ bản đã được tạo và gán.", view=None)
+                
+                msg_content = "✅ Yêu cầu của bạn đã được gửi đến admin để thiết lập style. Role cơ bản đã được tạo và gán."
+                if thread: await thread.send(msg_content)
+                else: await interaction.edit_original_response(content=msg_content, view=None)
             else:
                 regular_config = self.guild_config.get('REGULAR_USER_ROLE_CREATION', {})
                 multiplier = regular_config.get('SHOP_PRICE_MULTIPLIER', 1.2)
                 shop_price = int(self.creation_price * multiplier)
                 db.add_role_to_shop(new_role.id, guild.id, shop_price, creator_id=interaction.user.id, creation_price=self.creation_price)
-                await interaction.edit_original_response(content=f"✅ Bạn đã tạo thành công role **{self.role_name}**! Role này giờ cũng có sẵn trong shop.", view=None)
+                
+                msg_content = f"✅ Bạn đã tạo thành công role **{self.role_name}**! Role này giờ cũng có sẵn trong shop."
+                if thread: await thread.send(msg_content)
+                else: await interaction.edit_original_response(content=msg_content, view=None)
 
             await interaction.user.add_roles(new_role)
+            if thread: await thread.edit(archived=True, locked=True)
 
         except discord.Forbidden:
-            await interaction.edit_original_response(content="❌ Lỗi quyền! Tôi không thể tạo/sửa/gán role. Giao dịch đã hủy.", view=None)
+            msg_content = "❌ Lỗi quyền! Tôi không thể tạo/sửa/gán role. Giao dịch đã hủy."
+            if thread: 
+                await thread.send(msg_content)
+                await thread.edit(archived=True, locked=True)
+            else: await interaction.edit_original_response(content=msg_content, view=None)
         except discord.HTTPException as e:
             logging.error(f"Loi HTTP khi tao role: {e.status} - {e.text}")
-            await interaction.edit_original_response(content=f"❌ Đã xảy ra lỗi từ Discord khi tạo role. Vui lòng thử lại. (Chi tiết: {e.text})", view=None)
+            msg_content = f"❌ Đã xảy ra lỗi từ Discord khi tạo role. Vui lòng thử lại. (Chi tiết: {e.text})"
+            if thread:
+                await thread.send(msg_content)
+                await thread.edit(archived=True, locked=True)
+            else: await interaction.edit_original_response(content=msg_content, view=None)
         except Exception as e:
             logging.error(f"Loi khong mong muon: {e}")
-            await interaction.edit_original_response(content=f"Lỗi không mong muốn, vui lòng liên hệ admin.", view=None)
+            msg_content = f"Lỗi không mong muốn, vui lòng liên hệ admin."
+            if thread:
+                await thread.send(msg_content)
+                await thread.edit(archived=True, locked=True)
+            else: await interaction.edit_original_response(content=msg_content, view=None)
 
     async def notify_admin(self, interaction: discord.Interaction, action_type: str):
         admin_channel_id = self.guild_config.get('ADMIN_LOG_CHANNEL_ID')
