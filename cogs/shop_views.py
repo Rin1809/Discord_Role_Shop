@@ -157,7 +157,6 @@ class RoleListSelect(Select):
             color=role.color if role.color.value != 0 else self.embed_color
         )
         
-        # logic avatar
         creator_id = role_data.get('creator_id')
         if creator_id:
             creator = interaction.guild.get_member(creator_id)
@@ -576,7 +575,6 @@ class ShopView(View):
         shop_roles_db = db.get_shop_roles(interaction.guild.id)
         if shop_roles_db:
             shop_role_ids = {r['role_id'] for r in shop_roles_db}
-            # hien thi ten, ko mention
             owned_roles = [f"`{role.name}`" for role in interaction.user.roles if role.id in shop_role_ids]
             
             owned_roles_str = "\n".join(owned_roles) if owned_roles else "Chưa sở hữu role nào."

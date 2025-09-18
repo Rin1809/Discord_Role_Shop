@@ -1,12 +1,225 @@
 import discord
-from discord.ui import Modal, TextInput
+from discord.ui import Modal, TextInput, View, Select, Button
 from database import database as db
 import re
 import asyncio
 import logging
+import math
 
 def is_valid_hex_color(s):
     return re.match(r'^#?([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$', s) is not None
+
+# SUA LAI EMOJI SELECT DE NHAN TRANG
+class EmojiSelect(Select):
+    def __init__(self, emojis, page=0):
+        # lay 25 emoji cho trang hien tai
+        start_index = page * 25
+        end_index = start_index + 25
+        current_emojis = emojis[start_index:end_index]
+
+        options = [
+            discord.SelectOption(
+                label=emoji.name,
+                value=str(emoji.id),
+                emoji=emoji
+            ) for emoji in current_emojis
+        ] if current_emojis else [discord.SelectOption(label="Không có emoji", value="none")]
+
+        super().__init__(placeholder=f"Trang {page + 1} - Chọn một emoji...", options=options, disabled=not current_emojis)
+
+    async def callback(self, interaction: discord.Interaction):
+        if self.values[0] == "none":
+            await interaction.response.defer()
+            return
+        # truy cap ham _finalize_role_creation tu view cha (EmojiPageView -> RoleCreationProcessView)
+        await self.view.creation_view._finalize_role_creation(interaction, icon_id=self.values[0])
+
+# VIEW MOI DE PHAN TRANG EMOJI
+class EmojiPageView(View):
+    def __init__(self, emojis, creation_view):
+        super().__init__(timeout=180)
+        self.emojis = emojis
+        self.creation_view = creation_view # luu view goc
+        self.current_page = 0
+        self.total_pages = math.ceil(len(self.emojis) / 25)
+        self.update_view()
+
+    def update_view(self):
+        self.clear_items()
+        self.add_item(EmojiSelect(self.emojis, self.current_page))
+        if self.total_pages > 1:
+            prev_button = Button(label="Trước", style=discord.ButtonStyle.secondary, emoji="⬅️", disabled=self.current_page == 0)
+            prev_button.callback = self.prev_page
+            
+            next_button = Button(label="Sau", style=discord.ButtonStyle.secondary, emoji="➡️", disabled=self.current_page >= self.total_pages - 1)
+            next_button.callback = self.next_page
+
+            self.add_item(prev_button)
+            self.add_item(next_button)
+
+    async def prev_page(self, interaction: discord.Interaction):
+        self.current_page -= 1
+        self.update_view()
+        await interaction.response.edit_message(view=self)
+
+    async def next_page(self, interaction: discord.Interaction):
+        self.current_page += 1
+        self.update_view()
+        await interaction.response.edit_message(view=self)
+
+
+class RoleCreationProcessView(View):
+    def __init__(self, bot, guild_config, role_name, color_int, style, color1_str, color2_str, creation_price, is_booster, role_to_edit):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.guild_config = guild_config
+        self.role_name = role_name
+        self.color_int = color_int
+        self.style = style
+        self.color1_str = color1_str
+        self.color2_str = color2_str
+        self.creation_price = creation_price
+        self.is_booster = is_booster
+        self.role_to_edit = role_to_edit
+        self.embed_color = discord.Color(int(str(guild_config.get('EMBED_COLOR', '#ff00af')).lstrip('#'), 16))
+
+    async def _finalize_role_creation(self, interaction: discord.Interaction, icon=None, icon_id=None):
+        await interaction.response.edit_message(content="Đang xử lý...", view=None)
+
+        final_icon_data = icon
+        guild = interaction.guild
+
+        if icon_id:
+            emoji_obj = guild.get_emoji(int(icon_id))
+            if emoji_obj:
+                try:
+                    final_icon_data = await emoji_obj.read()
+                except Exception as e:
+                    logging.error(f"Khong the tai anh emoji {emoji_obj.id}: {e}")
+                    await interaction.edit_original_response(content="❌ Lỗi: Không thể tải được dữ liệu của emoji này. Vui lòng thử lại.", view=None)
+                    return
+            else:
+                await interaction.edit_original_response(content="❌ Lỗi: Không thể tìm thấy emoji này trên server. Vui lòng thử lại.", view=None)
+                return
+
+        new_color = discord.Color(self.color_int)
+
+        try:
+            if self.role_to_edit:
+                await self.role_to_edit.edit(name=self.role_name, color=new_color, display_icon=final_icon_data, reason=f"User edit request")
+                db.add_or_update_custom_role(interaction.user.id, guild.id, self.role_to_edit.id, self.role_name, f"#{self.color_int:06x}", self.style, self.color1_str, self.color2_str)
+                await self.notify_admin(interaction, "sửa")
+                await interaction.edit_original_response(content=f"✅ Đã gửi yêu cầu chỉnh sửa role **{self.role_name}** đến admin. Vui lòng chờ.", view=None)
+                return
+
+            user_data = db.get_or_create_user(interaction.user.id, guild.id)
+            new_balance = user_data['balance'] - self.creation_price
+            
+            new_role = await guild.create_role(
+                name=self.role_name, color=new_color, display_icon=final_icon_data, reason=f"Custom role for {interaction.user.name}"
+            )
+            
+            db.update_user_data(interaction.user.id, guild.id, balance=new_balance)
+            db.log_transaction(guild.id, interaction.user.id, 'create_custom_role', self.role_name, -self.creation_price, new_balance)
+
+            if self.is_booster:
+                try:
+                    target_position = guild.me.top_role.position - 1
+                    await new_role.edit(position=target_position)
+                except Exception: pass
+                
+                db.add_or_update_custom_role(interaction.user.id, guild.id, new_role.id, self.role_name, f"#{self.color_int:06x}", self.style, self.color1_str, self.color2_str)
+                await self.notify_admin(interaction, "tạo mới")
+                await interaction.edit_original_response(content="✅ Yêu cầu của bạn đã được gửi đến admin để thiết lập style. Role cơ bản đã được tạo và gán.", view=None)
+            else:
+                regular_config = self.guild_config.get('REGULAR_USER_ROLE_CREATION', {})
+                multiplier = regular_config.get('SHOP_PRICE_MULTIPLIER', 1.2)
+                shop_price = int(self.creation_price * multiplier)
+                db.add_role_to_shop(new_role.id, guild.id, shop_price, creator_id=interaction.user.id, creation_price=self.creation_price)
+                await interaction.edit_original_response(content=f"✅ Bạn đã tạo thành công role **{self.role_name}**! Role này giờ cũng có sẵn trong shop.", view=None)
+
+            await interaction.user.add_roles(new_role)
+
+        except discord.Forbidden:
+            await interaction.edit_original_response(content="❌ Lỗi quyền! Tôi không thể tạo/sửa/gán role. Giao dịch đã hủy.", view=None)
+        except discord.HTTPException as e:
+            logging.error(f"Loi HTTP khi tao role: {e.status} - {e.text}")
+            await interaction.edit_original_response(content=f"❌ Đã xảy ra lỗi từ Discord khi tạo role. Vui lòng thử lại. (Chi tiết: {e.text})", view=None)
+        except Exception as e:
+            logging.error(f"Loi khong mong muon: {e}")
+            await interaction.edit_original_response(content=f"Lỗi không mong muốn, vui lòng liên hệ admin.", view=None)
+
+    async def notify_admin(self, interaction: discord.Interaction, action_type: str):
+        admin_channel_id = self.guild_config.get('ADMIN_LOG_CHANNEL_ID')
+        if not admin_channel_id: return
+
+        channel = self.bot.get_channel(int(admin_channel_id))
+        if not channel: return
+        
+        ping_content = " ".join([f"<@&{rid}>" for rid in self.guild_config.get('CUSTOM_ROLE_PING_ROLES', [])])
+
+        embed = discord.Embed(
+            title="Yêu Cầu Chỉnh Sửa Role Style",
+            description=f"Member {interaction.user.mention} vừa **{action_type}** một role tùy chỉnh và yêu cầu set style.",
+            color=discord.Color.gold(),
+            timestamp=discord.utils.utcnow()
+        )
+        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+        embed.add_field(name="Tên Role", value=f"```{self.role_name}```", inline=False)
+        embed.add_field(name="Style Yêu Cầu", value=f"```{self.style}```", inline=True)
+
+        if self.style == "Gradient":
+            embed.add_field(name="Màu 1", value=f"```{self.color1_str}```", inline=True)
+            embed.add_field(name="Màu 2", value=f"```{self.color2_str}```", inline=True)
+        else:
+            embed.add_field(name="Màu Sắc", value=f"```#{self.color_int:06x}```", inline=True)
+
+        embed.set_footer(text="Admin check giup.")
+        await channel.send(content=ping_content, embed=embed)
+
+    @discord.ui.button(label="Tải ảnh lên", style=discord.ButtonStyle.primary, emoji="🖼️")
+    async def upload_icon(self, interaction: discord.Interaction, button: Button):
+        for item in self.children: item.disabled = True
+        await interaction.response.edit_message(content="**Vui lòng gửi ảnh bạn muốn dùng làm icon (dưới 256KB).**\nBạn có 60 giây.", view=self)
+
+        def check(m):
+            return m.author == interaction.user and m.channel == interaction.channel and m.attachments
+        
+        try:
+            msg = await self.bot.wait_for('message', check=check, timeout=60.0)
+            attachment = msg.attachments[0]
+            if attachment.size > 256 * 1024:
+                try: await msg.delete()
+                except: pass
+                await interaction.edit_original_response(content="❌ Ảnh quá lớn (phải dưới 256KB). Vui lòng thử lại từ đầu.", view=None)
+                return
+            
+            icon_bytes = await attachment.read()
+            try: await msg.delete()
+            except: pass
+            
+            await self._finalize_role_creation(interaction, icon=icon_bytes)
+
+        except asyncio.TimeoutError:
+            await interaction.edit_original_response(content="⏰ Hết thời gian. Vui lòng thử lại từ đầu.", view=None)
+
+    @discord.ui.button(label="Chọn Emoji", style=discord.ButtonStyle.secondary, emoji="😀")
+    async def select_emoji(self, interaction: discord.Interaction, button: Button):
+        # SAP XEP LAI DANH SACH EMOJI: TINH TRUOC, DONG SAU
+        sorted_emojis = sorted(interaction.guild.emojis, key=lambda e: e.animated)
+        
+        if not sorted_emojis:
+            await interaction.response.send_message("Server này không có emoji nào để chọn.", ephemeral=True)
+            return
+        
+        # TAO VIEW PHAN TRANG
+        page_view = EmojiPageView(emojis=sorted_emojis, creation_view=self)
+        await interaction.response.edit_message(content="Vui lòng chọn một emoji từ danh sách bên dưới:", view=page_view)
+
+    @discord.ui.button(label="Bỏ qua", style=discord.ButtonStyle.danger)
+    async def no_icon(self, interaction: discord.Interaction, button: Button):
+        await self._finalize_role_creation(interaction, icon=None)
+
 
 class PurchaseModal(Modal, title="Mua Role"):
     def __init__(self, bot):
@@ -197,7 +410,6 @@ class CustomRoleModal(Modal):
         self.is_booster = is_booster
         self.min_creation_price = min_creation_price
         self.role_to_edit = role_to_edit
-        self.embed_color = discord.Color(int(str(guild_config.get('EMBED_COLOR', '#ff00af')).lstrip('#'), 16))
 
         self.add_item(TextInput(
             label="Tên role bạn muốn",
@@ -217,7 +429,6 @@ class CustomRoleModal(Modal):
                     default=str(role_to_edit.color) if role_to_edit and self.style == "Solid" else "#ff00af"
                 ))
         else:
-            # role thuong
             self.add_item(TextInput(
                 label="Mã màu HEX (ví dụ: #ff00af)",
                 custom_id="custom_role_color",
@@ -250,28 +461,9 @@ class CustomRoleModal(Modal):
             bid_str = self.children[2].value
 
         color_int = int(role_color_str.lstrip('#'), 16)
-        new_color = discord.Color(color_int)
+        
+        user_data = db.get_or_create_user(interaction.user.id, self.guild_id)
 
-        guild = self.bot.get_guild(self.guild_id)
-        if not guild:
-            return await interaction.followup.send("Lỗi nghiêm trọng: Không tìm thấy server.", ephemeral=True)
-
-        user_data = db.get_or_create_user(interaction.user.id, guild.id)
-
-        # TH: sua role (chi booster)
-        if self.role_to_edit:
-            try:
-                await self.role_to_edit.edit(name=role_name, color=new_color, reason=f"User edit request")
-                db.add_or_update_custom_role(interaction.user.id, guild.id, self.role_to_edit.id, role_name, role_color_str, self.style, color1_str, color2_str)
-                
-                await self.notify_admin(interaction, "sửa")
-                await interaction.followup.send(f"✅ Đã gửi yêu cầu chỉnh sửa role **{role_name}** đến admin. Vui lòng chờ.", ephemeral=True)
-
-            except discord.Forbidden:
-                await interaction.followup.send("❌ Tôi không có quyền để chỉnh sửa role này.", ephemeral=True)
-            return
-
-        # TH: tao role
         creation_price = 0
         if self.is_booster:
             creation_price = self.guild_config.get('CUSTOM_ROLE_CONFIG', {}).get('PRICE', 1000)
@@ -283,109 +475,27 @@ class CustomRoleModal(Modal):
             except (ValueError, TypeError):
                 return await interaction.followup.send("Vui lòng nhập một số hợp lệ cho giá tiền.", ephemeral=True)
 
-        if user_data['balance'] < creation_price:
+        if not self.role_to_edit and user_data['balance'] < creation_price:
             return await interaction.followup.send(f"Bạn không đủ coin! Cần **{creation_price:,} coin** nhưng bạn chỉ có **{user_data['balance']:,}**.", ephemeral=True)
 
-        new_balance = user_data['balance'] - creation_price
-
-        try:
-            member = guild.get_member(interaction.user.id)
-            new_role = await guild.create_role(
-                name=role_name, color=new_color, reason=f"Custom role for {interaction.user.name}"
-            )
-            
-            db.update_user_data(interaction.user.id, guild.id, balance=new_balance)
-            
-            db.log_transaction(
-                guild_id=guild.id, user_id=interaction.user.id,
-                transaction_type='create_custom_role', item_name=role_name,
-                amount_changed=-creation_price, new_balance=new_balance
-            )
-
-            if self.is_booster:
-                for attempt in range(3):
-                    try:
-                        bot_member = guild.me
-                        if bot_member and bot_member.top_role and bot_member.top_role.position > 1:
-                            target_position = bot_member.top_role.position - 1
-                            await new_role.edit(position=target_position, reason="Dua role len cao")
-                            break
-                    except Exception:
-                        if attempt < 2: await asyncio.sleep(1)
-                        else: break
-                
-                db.add_or_update_custom_role(interaction.user.id, guild.id, new_role.id, role_name, role_color_str, self.style, color1_str, color2_str)
-                await self.notify_admin(interaction, "tạo mới")
-                await interaction.followup.send("✅ Yêu cầu của bạn đã được gửi đến admin để thiết lập style. Role cơ bản đã được tạo và gán.", ephemeral=True)
-            else:
-                # tinh gia shop va luu
-                regular_config = self.guild_config.get('REGULAR_USER_ROLE_CREATION', {})
-                multiplier = regular_config.get('SHOP_PRICE_MULTIPLIER', 1.2)
-                shop_price = int(creation_price * multiplier)
-
-                db.add_role_to_shop(new_role.id, guild.id, shop_price, creator_id=interaction.user.id, creation_price=creation_price)
-                await interaction.followup.send(f"✅ Bạn đã tạo thành công role **{role_name}**! Role này giờ cũng có sẵn trong shop cho người khác mua.", ephemeral=True)
-
-            await member.add_roles(new_role)
-
-        except discord.Forbidden:
-            await interaction.followup.send("❌ Đã xảy ra lỗi! Tôi không có quyền tạo hoặc gán role. Giao dịch đã bị hủy.", ephemeral=True)
-        except Exception as e:
-            logging.error(f"Loi khong mong muon: {e}")
-            await interaction.followup.send(f"Đã xảy ra lỗi không mong muốn, vui lòng liên hệ admin.", ephemeral=True)
-
-    async def notify_admin(self, interaction: discord.Interaction, action_type: str):
-        admin_channel_id = self.guild_config.get('ADMIN_LOG_CHANNEL_ID')
-        if not admin_channel_id:
-            logging.warning(f"ADMIN_LOG_CHANNEL_ID not set for guild {self.guild_id}")
-            return
-
-        channel = self.bot.get_channel(int(admin_channel_id))
-        if not channel:
-            logging.warning(f"Cannot find admin channel {admin_channel_id}")
-            return
-        
-        # xu ly ping
-        ping_content = ""
-        ping_role_ids = self.guild_config.get('CUSTOM_ROLE_PING_ROLES', [])
-        if ping_role_ids:
-            guild = self.bot.get_guild(self.guild_id)
-            if guild:
-                mentions = []
-                for role_id in ping_role_ids:
-                    role = guild.get_role(int(role_id))
-                    if role:
-                        mentions.append(role.mention)
-                if mentions:
-                    ping_content = " ".join(mentions)
-
-        role_name = self.children[0].value
-        embed = discord.Embed(
-            title="Yêu Cầu Chỉnh Sửa Role Style",
-            description=f"Member {interaction.user.mention} vừa **{action_type}** một role tùy chỉnh và yêu cầu set style.",
-            color=discord.Color.gold(),
-            timestamp=discord.utils.utcnow()
+        view = RoleCreationProcessView(
+            bot=self.bot,
+            guild_config=self.guild_config,
+            role_name=role_name,
+            color_int=color_int,
+            style=self.style,
+            color1_str=color1_str,
+            color2_str=color2_str,
+            creation_price=creation_price,
+            is_booster=self.is_booster,
+            role_to_edit=self.role_to_edit
         )
-        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
-        embed.add_field(name="Tên Role", value=f"```{role_name}```", inline=False)
-        embed.add_field(name="Style Yêu Cầu", value=f"```{self.style}```", inline=True)
-
-        if self.style == "Gradient":
-            color1 = self.children[1].value
-            color2 = self.children[2].value
-            embed.add_field(name="Màu 1", value=f"```{color1}```", inline=True)
-            embed.add_field(name="Màu 2", value=f"```{color2}```", inline=True)
-        else:
-            color = self.children[1].value
-            embed.add_field(name="Màu Sắc", value=f"```{color}```", inline=True)
-
-        embed.set_footer(text="Thêm Role cho người ta đi.")
-
-        try:
-            await channel.send(content=ping_content, embed=embed)
-        except discord.Forbidden:
-            logging.error(f"Cannot send message to admin channel {admin_channel_id}")
-
+        
+        await interaction.followup.send(
+            "<:MenheraFlower:1406458230317645906> **Bước 2/2: Chọn Icon cho Role**\nBạn có muốn thêm icon cho role không? (Tùy chọn)",
+            view=view,
+            ephemeral=True
+        )
 
 async def setup(bot):
     pass
