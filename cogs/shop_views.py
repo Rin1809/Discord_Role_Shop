@@ -112,7 +112,6 @@ class PaginatedRoleListView(View):
             self.current_page += 1
             await self.update_view()
 
-# view chi tiet role
 class RoleDetailView(View):
     def __init__(self, bot, guild_config, role_obj: discord.Role, role_data: dict):
         super().__init__(timeout=180)
@@ -154,7 +153,6 @@ class RoleDetailView(View):
         button.label = "Mua thành công"
         await interaction.edit_original_response(view=self)
         
-        # bien lai
         receipt_embed = discord.Embed(
             title="Biên Lai Giao Dịch Mua Hàng",
             description="Giao dịch của bạn đã được xử lý thành công.",
@@ -200,11 +198,18 @@ class RoleListSelect(Select):
                 for i, role_data in enumerate(roles):
                     role = guild.get_role(role_data['role_id'])
                     if role:
+                        # logic xd icon
+                        final_emoji = "<:g_chamhoi:1326543673957027961>"
+                        if isinstance(role.icon, discord.Emoji):
+                            final_emoji = role.icon
+                        elif role.icon is not None: 
+                            final_emoji = "🖼️"
+                        
                         options.append(discord.SelectOption(
                             label=f"{i+1}. {role.name}",
                             description=f"Giá: {role_data['price']:,} coin",
                             value=str(role.id),
-                            emoji="<:g_chamhoi:1326543673957027961>"
+                            emoji=final_emoji
                         ))
 
         super().__init__(
@@ -224,11 +229,20 @@ class RoleListSelect(Select):
         if not role_data or not role:
             return await interaction.followup.send("Role này không còn tồn tại.", ephemeral=True)
         
+        embed_title = f"Thông tin Role: {role.name}"
         embed = discord.Embed(
-            title=f"Thông tin Role: {role.name}",
             description=f"Đây là thông tin chi tiết về role bạn đã chọn.",
             color=role.color if role.color.value != 0 else self.embed_color
         )
+        
+        # them icon
+        if role.icon:
+            if isinstance(role.icon, discord.Asset):
+                embed.set_image(url=role.icon.url)
+            elif isinstance(role.icon, discord.Emoji):
+                embed_title = f"Thông tin Role: {role.icon} {role.name}"
+        
+        embed.title = embed_title
         
         creator_id = role_data.get('creator_id')
         if creator_id:

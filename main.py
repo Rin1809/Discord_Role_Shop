@@ -26,6 +26,7 @@ intents.message_content = True
 intents.members = True
 intents.reactions = True
 intents.guilds = True 
+intents.emojis_and_stickers = True # them intent nay
 
 class ShopBot(commands.Bot):
     def __init__(self):
