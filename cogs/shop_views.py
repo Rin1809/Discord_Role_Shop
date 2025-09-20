@@ -1,7 +1,7 @@
 import discord
 from discord.ui import Button, View, Select
 from database import database as db
-from .shop_modals import CustomRoleModal, PurchaseModal, SellModal
+from .shop_modals import CustomRoleModal, SellModal
 import math
 
 ROLES_PER_PAGE = 5
@@ -112,6 +112,79 @@ class PaginatedRoleListView(View):
             self.current_page += 1
             await self.update_view()
 
+# view chi tiet role
+class RoleDetailView(View):
+    def __init__(self, bot, guild_config, role_obj: discord.Role, role_data: dict):
+        super().__init__(timeout=180)
+        self.bot = bot
+        self.guild_config = guild_config
+        self.role_obj = role_obj
+        self.role_data = role_data
+        self.embed_color = discord.Color(int(str(self.guild_config.get('EMBED_COLOR', '#ff00af')).lstrip('#'), 16))
+
+    @discord.ui.button(label="Mua Ngay", style=discord.ButtonStyle.secondary, emoji="<:MenheraNya3:1406458270641819840>")
+    async def buy_callback(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.defer(ephemeral=True)
+        
+        price = self.role_data['price']
+        user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
+
+        if self.role_obj in interaction.user.roles:
+            button.disabled = True
+            button.label = "Đã sở hữu"
+            await interaction.edit_original_response(view=self)
+            return await interaction.followup.send(f"Bạn đã sở hữu role {self.role_obj.mention} rồi!", ephemeral=True)
+
+        if user_data['balance'] < price:
+            return await interaction.followup.send(f"Bạn không đủ coin! Cần **{price} coin** nhưng bạn chỉ có **{user_data['balance']}**.", ephemeral=True)
+
+        new_balance = user_data['balance'] - price
+        try:
+            await interaction.user.add_roles(self.role_obj, reason="Mua từ shop")
+            db.update_user_data(interaction.user.id, interaction.guild.id, balance=new_balance)
+            db.log_transaction(
+                guild_id=interaction.guild.id, user_id=interaction.user.id,
+                transaction_type='buy_role', item_name=self.role_obj.name,
+                amount_changed=-price, new_balance=new_balance
+            )
+        except discord.Forbidden:
+            return await interaction.followup.send("❌ Lỗi! Tôi không có quyền để gán role này. Giao dịch đã bị hủy.", ephemeral=True)
+
+        button.disabled = True
+        button.label = "Mua thành công"
+        await interaction.edit_original_response(view=self)
+        
+        # bien lai
+        receipt_embed = discord.Embed(
+            title="Biên Lai Giao Dịch Mua Hàng",
+            description="Giao dịch của bạn đã được xử lý thành công.",
+            color=self.embed_color,
+            timestamp=discord.utils.utcnow()
+        )
+        receipt_embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+        if interaction.guild.icon:
+            receipt_embed.set_thumbnail(url=interaction.guild.icon.url)
+        
+        receipt_embed.add_field(name="Loại Giao Dịch", value="```Mua Role```", inline=False)
+        receipt_embed.add_field(name="Sản Phẩm", value=f"```{self.role_obj.name}```", inline=True)
+        receipt_embed.add_field(name="Chi Phí", value=f"```- {price:,} coin```", inline=True)
+        receipt_embed.add_field(name="Số Dư Mới", value=f"```{new_balance:,} coin```", inline=True)
+
+        if self.guild_config.get('SHOP_EMBED_IMAGE_URL'):
+            receipt_embed.set_image(url=self.guild_config.get('SHOP_EMBED_IMAGE_URL'))
+        receipt_embed.set_footer(text=f"Cảm ơn bạn đã giao dịch tại {interaction.guild.name}", icon_url=self.bot.user.avatar.url)
+        
+        try:
+            await interaction.user.send(embed=receipt_embed)
+            await interaction.followup.send("✅ Giao dịch thành công! Vui lòng kiểm tra tin nhắn riêng để xem biên lai.", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.followup.send(
+                "<a:c_947079524435247135:1274398161200484446> Tôi không thể gửi biên lai vào tin nhắn riêng của bạn. Giao dịch vẫn thành công. Đây là biên lai của bạn:",
+                embed=receipt_embed,
+                ephemeral=True
+            )
+
+
 class RoleListSelect(Select):
     def __init__(self, bot, guild_config: dict, roles: list):
         self.bot = bot
@@ -135,14 +208,14 @@ class RoleListSelect(Select):
                         ))
 
         super().__init__(
-            placeholder="Chọn một role để xem chi tiết...", 
+            placeholder="Chọn một role để xem chi tiết & mua...", 
             min_values=1, 
             max_values=1, 
             options=options[:25]
         )
     
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await interaction.response.defer(ephemeral=True)
         
         role_id_str = self.values[0]
         role_data = self.roles_data.get(role_id_str)
@@ -178,9 +251,8 @@ class RoleListSelect(Select):
         refund_amount = int(role_data['price'] * refund_percentage)
         embed.add_field(name="Bán Lại", value=f"```{refund_amount:,} coin ({refund_percentage:.0%})```", inline=False)
         
-        embed.set_footer(text=f"Sử dụng nút Mua/Bán và nhập số thứ tự tương ứng để giao dịch.")
-        
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        view = RoleDetailView(self.bot, self.guild_config, role, role_data)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 class RoleListView(View):
     def __init__(self, bot, guild_config: dict, roles: list):
@@ -446,8 +518,7 @@ class ShopActionSelect(Select):
     def __init__(self, bot):
         self.bot = bot
         options = [
-            discord.SelectOption(label="Danh Sách Role", value="list_roles", description="Xem tất cả các role đang được bán.", emoji="<:MenheraFlower:1406458230317645906>"),
-            discord.SelectOption(label="Mua Role", value="purchase", description="Sở hữu ngay role bạn yêu thích.", emoji="<:MenheraFlowers:1406458246528635031>"),
+            discord.SelectOption(label="Danh Sách Role", value="list_roles", description="Xem và mua các role đang được bán.", emoji="<:MenheraFlower:1406458230317645906>"),
             discord.SelectOption(label="Bán Role", value="sell", description="Bán lại role đã mua để nhận lại coin.", emoji="<a:MenheraNod:1406458257349935244>"),
             discord.SelectOption(label="Tạo Role Style (Booster)", value="custom_role_booster", description="Tạo role với style đặc biệt chỉ dành cho Booster.", emoji="<a:boost:1406487216649277510>"),
             discord.SelectOption(label="Tạo Role Thường", value="custom_role_member", description="Tạo một role với tên và màu sắc của riêng bạn.", emoji="<:g_chamhoi:1326543673957027961>")
@@ -490,9 +561,6 @@ class ShopActionSelect(Select):
                     view=view,
                     ephemeral=True
                 )
-
-        elif action == "purchase":
-            await interaction.response.send_modal(PurchaseModal(bot=self.bot))
 
         elif action == "sell":
             await interaction.response.send_modal(SellModal(bot=self.bot))

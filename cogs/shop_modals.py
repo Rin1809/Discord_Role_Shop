@@ -71,10 +71,10 @@ class EmojiPageView(View):
 class IconActionSelect(Select):
     def __init__(self):
         options = [
-            discord.SelectOption(label="Chọn Emoji từ Server", value="select_emoji", emoji="😀"),
-            discord.SelectOption(label="Tải Ảnh Lên (Qua Thread)", value="upload_image", emoji="🖼️"),
-            discord.SelectOption(label="Tiếp Tục (Không có Icon)", value="no_icon", emoji="✅"),
-            discord.SelectOption(label="Hủy Bỏ", value="cancel", emoji="✖️"),
+            discord.SelectOption(label="Chọn Emoji từ Server", value="select_emoji", emoji="<:mfz_chii_suynghi:1418921010069110907>"),
+            discord.SelectOption(label="Tải Ảnh Lên (Qua Thread)", value="upload_image", emoji="<:mfz_Cuteheart1:1407311177373061130><:mfz_Cuteheart2:1407311189268103299>"),
+            discord.SelectOption(label="Tiếp Tục (Không có Icon)", value="no_icon", emoji="<:mfz_Cuteheart2:1407311189268103299>"),
+            discord.SelectOption(label="Hủy Bỏ", value="cancel", emoji="<:chiicry1082441407786135662:1418920995779248188>"),
         ]
         super().__init__(placeholder="Chọn một tùy chọn cho icon...", options=options)
 
@@ -202,6 +202,7 @@ class RoleCreationProcessView(View):
         new_color = discord.Color(self.color_int)
 
         try:
+            # TH sua role
             if self.role_to_edit:
                 await self.role_to_edit.edit(name=self.role_name, color=new_color, display_icon=final_icon_data, reason=f"User edit request")
                 db.add_or_update_custom_role(interaction.user.id, guild.id, self.role_to_edit.id, self.role_name, f"#{self.color_int:06x}", self.style, self.color1_str, self.color2_str)
@@ -214,7 +215,7 @@ class RoleCreationProcessView(View):
                 else: await interaction.edit_original_response(content=msg_content, view=None)
                 return
             
-            # buoc 1: thuc hien tren discord
+            # TH tao role moi
             new_role = await guild.create_role(
                 name=self.role_name, color=new_color, display_icon=final_icon_data, reason=f"Custom role for {interaction.user.name}"
             )
@@ -226,30 +227,62 @@ class RoleCreationProcessView(View):
                     await new_role.edit(position=target_position)
                 except Exception: pass
             
-            # buoc 2: neu thanh cong, cap nhat database
             user_data = db.get_or_create_user(interaction.user.id, guild.id)
             new_balance = user_data['balance'] - self.creation_price
             db.update_user_data(interaction.user.id, guild.id, balance=new_balance)
             db.log_transaction(guild.id, interaction.user.id, 'create_custom_role', self.role_name, -self.creation_price, new_balance)
 
+            # tao bien lai
+            receipt_embed = discord.Embed(
+                title="Biên Lai Giao Dịch Tạo Role",
+                description="Giao dịch của bạn đã được xử lý thành công.",
+                color=self.embed_color,
+                timestamp=discord.utils.utcnow()
+            )
+            receipt_embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+            if interaction.guild.icon:
+                receipt_embed.set_thumbnail(url=interaction.guild.icon.url)
+            
+            msg_content = ""
             if self.is_booster:
                 db.add_or_update_custom_role(interaction.user.id, guild.id, new_role.id, self.role_name, f"#{self.color_int:06x}", self.style, self.color1_str, self.color2_str)
                 await self.notify_admin(interaction, "tạo mới")
                 msg_content = "✅ Yêu cầu của bạn đã được gửi đến admin để thiết lập style. Role cơ bản đã được tạo và gán."
+                receipt_embed.add_field(name="Loại Giao Dịch", value="```Tạo Role Booster```", inline=False)
             else:
                 regular_config = self.guild_config.get('REGULAR_USER_ROLE_CREATION', {})
                 multiplier = regular_config.get('SHOP_PRICE_MULTIPLIER', 1.2)
                 shop_price = int(self.creation_price * multiplier)
                 db.add_role_to_shop(new_role.id, guild.id, shop_price, creator_id=interaction.user.id, creation_price=self.creation_price)
                 msg_content = f"✅ Bạn đã tạo thành công role **{self.role_name}**! Role này giờ cũng có sẵn trong shop."
+                receipt_embed.add_field(name="Loại Giao Dịch", value="```Tạo Role Thường```", inline=False)
 
-            if thread:
-                await thread.send(msg_content)
-                await thread.edit(archived=True, locked=True)
-            else: await interaction.edit_original_response(content=msg_content, view=None)
+            receipt_embed.add_field(name="Sản Phẩm", value=f"```{self.role_name}```", inline=True)
+            receipt_embed.add_field(name="Chi Phí", value=f"```- {self.creation_price:,} coin```", inline=True)
+            receipt_embed.add_field(name="Số Dư Mới", value=f"```{new_balance:,} coin```", inline=True)
+
+            if self.guild_config.get('SHOP_EMBED_IMAGE_URL'):
+                receipt_embed.set_image(url=self.guild_config.get('SHOP_EMBED_IMAGE_URL'))
+            receipt_embed.set_footer(text=f"Cảm ơn bạn đã giao dịch tại {interaction.guild.name}", icon_url=self.bot.user.avatar.url)
+
+            # gui bien lai
+            try:
+                await interaction.user.send(embed=receipt_embed)
+                final_msg = msg_content + "\nBiên lai đã được gửi vào tin nhắn riêng của bạn."
+                if thread:
+                    await thread.send(final_msg)
+                    await thread.edit(archived=True, locked=True)
+                else: 
+                    await interaction.edit_original_response(content=final_msg, view=None)
+            except discord.Forbidden:
+                final_msg = msg_content + "\n(Tôi không thể gửi biên lai vào DM của bạn.)"
+                if thread:
+                    await thread.send(final_msg, embed=receipt_embed)
+                    await thread.edit(archived=True, locked=True)
+                else:
+                    await interaction.edit_original_response(content=final_msg, view=None, embed=receipt_embed)
 
         except (discord.Forbidden, discord.HTTPException) as e:
-            # hoan tac neu da tao role
             if new_role:
                 await new_role.delete(reason="Giao dich that bai, hoan tac")
             
@@ -300,96 +333,6 @@ class RoleCreationProcessView(View):
 
         embed.set_footer(text="Admin check giup.")
         await channel.send(content=ping_content, embed=embed)
-
-class PurchaseModal(Modal, title="Mua Role"):
-    def __init__(self, bot):
-        super().__init__()
-        self.bot = bot
-        self.add_item(TextInput(
-            label="Số thứ tự của role",
-            placeholder="Nhập số tương ứng với role bạn muốn mua...",
-            custom_id="purchase_role_id_input"
-        ))
-
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True, thinking=True)
-
-        guild_config = self.bot.guild_configs.get(str(interaction.guild.id))
-        if not guild_config:
-            return await interaction.followup.send("Lỗi: Không tìm thấy config cho server này.", ephemeral=True)
-
-        embed_color = discord.Color(int(str(guild_config.get('EMBED_COLOR', '#ff00af')).lstrip('#'), 16))
-
-        try:
-            role_number_input = int(self.children[0].value)
-            if role_number_input <= 0:
-                raise ValueError
-        except (ValueError, TypeError):
-            return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Vui lòng nhập một số thứ tự hợp lệ.", ephemeral=True)
-
-        shop_roles = db.get_shop_roles(interaction.guild.id)
-        if not shop_roles or role_number_input > len(shop_roles):
-            return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Số thứ tự này không tồn tại trong shop.", ephemeral=True)
-
-        selected_role_data = shop_roles[role_number_input - 1]
-        role_id = selected_role_data['role_id']
-        price = selected_role_data['price']
-
-        role_obj = interaction.guild.get_role(role_id)
-        if not role_obj:
-            return await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Role này không còn tồn tại trên server. Vui lòng liên hệ Admin.", ephemeral=True)
-
-        user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
-
-        if role_obj in interaction.user.roles:
-            return await interaction.followup.send(f"Bạn đã sở hữu role {role_obj.mention} rồi!", ephemeral=True)
-
-        if user_data['balance'] < price:
-            return await interaction.followup.send(f"Bạn không đủ coin! Cần **{price} coin** nhưng bạn chỉ có **{user_data['balance']}**.", ephemeral=True)
-
-        new_balance = user_data['balance'] - price
-
-        try:
-            await interaction.user.add_roles(role_obj, reason="Mua từ shop")
-            db.update_user_data(interaction.user.id, interaction.guild.id, balance=new_balance)
-
-            db.log_transaction(
-                guild_id=interaction.guild.id, user_id=interaction.user.id,
-                transaction_type='buy_role', item_name=role_obj.name,
-                amount_changed=-price, new_balance=new_balance
-            )
-        except discord.Forbidden:
-            return await interaction.followup.send("❌ Đã xảy ra lỗi! Tôi không có quyền để gán role này cho bạn. Giao dịch đã bị hủy.", ephemeral=True)
-
-        receipt_embed = discord.Embed(
-            title="Biên Lai Giao Dịch Mua Hàng",
-            description="Giao dịch của bạn đã được xử lý thành công.",
-            color=embed_color,
-            timestamp=discord.utils.utcnow()
-        )
-        receipt_embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
-        if interaction.guild.icon:
-            receipt_embed.set_thumbnail(url=interaction.guild.icon.url)
-
-        receipt_embed.add_field(name="Loại Giao Dịch", value="```Mua Role```", inline=False)
-        receipt_embed.add_field(name="Sản Phẩm", value=f"```{role_obj.name}```", inline=True)
-        receipt_embed.add_field(name="Chi Phí", value=f"```- {price} coin```", inline=True)
-        receipt_embed.add_field(name="Số Dư Mới", value=f"```{new_balance} coin```", inline=True)
-
-        if guild_config.get('SHOP_EMBED_IMAGE_URL'):
-            receipt_embed.set_image(url=guild_config.get('SHOP_EMBED_IMAGE_URL'))
-
-        receipt_embed.set_footer(text=f"Cảm ơn bạn đã giao dịch tại {interaction.guild.name}", icon_url=self.bot.user.avatar.url)
-
-        try:
-            await interaction.user.send(embed=receipt_embed)
-            await interaction.followup.send("✅ Giao dịch thành công! Vui lòng kiểm tra tin nhắn riêng để xem biên lai.", ephemeral=True)
-        except discord.Forbidden:
-            await interaction.followup.send(
-                "<a:c_947079524435247135:1274398161200484446> Tôi không thể gửi biên lai vào tin nhắn riêng của bạn. Giao dịch vẫn thành công. Đây là biên lai của bạn:",
-                embed=receipt_embed,
-                ephemeral=True
-            )
 
 class SellModal(Modal, title="Bán Lại Role"):
     def __init__(self, bot):
