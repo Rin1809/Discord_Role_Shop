@@ -91,7 +91,7 @@ class IconActionSelect(Select):
             await interaction.response.edit_message(content="Vui lòng chọn một emoji:", view=page_view)
 
         elif action == "upload_image":
-            await interaction.response.edit_message(content="<:loading:1422121034827431936> Đang tạo thread riêng tư cho bạn...", view=None)
+            await interaction.response.edit_message(content="<a:loading:1422121034827431936> Đang tạo thread riêng tư cho bạn...", view=None)
             
             try:
                 thread = await interaction.channel.create_thread(
@@ -174,9 +174,9 @@ class RoleCreationProcessView(View):
 
     async def _finalize_role_creation(self, interaction: discord.Interaction, icon=None, icon_id=None, thread: discord.Thread = None):
         if thread:
-            await thread.send("<a:loading:1274398154694467614> Đang xử lý, vui lòng chờ...")
+            await thread.send("<a:loading:1422121034827431936> Đang xử lý, vui lòng chờ...")
         else:
-            await interaction.response.edit_message(content="<a:loading:1274398154694467614> Đang xử lý...", view=None)
+            await interaction.response.edit_message(content="<a:loading:1422121034827431936> Đang xử lý...", view=None)
 
         final_icon_data = icon
         guild = interaction.guild
