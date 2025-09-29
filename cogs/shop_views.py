@@ -628,7 +628,7 @@ class ShopView(View):
         self.bot = bot
         self.add_item(ShopActionSelect(bot=self.bot))
 
-    @discord.ui.button(label="Cách sử dụng", style=discord.ButtonStyle.secondary, custom_id="shop_view:account", emoji="<a:z_cat_yolo:1326542766330740818>")
+    @discord.ui.button(label="Tài khoản của tôi / Cách sử dụng", style=discord.ButtonStyle.secondary, custom_id="shop_view:account", emoji="<a:z_cat_yolo:1326542766330740818>")
     async def account_button_callback(self, interaction: discord.Interaction, button: Button):
         await interaction.response.defer(ephemeral=True)
 

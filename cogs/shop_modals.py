@@ -91,7 +91,7 @@ class IconActionSelect(Select):
             await interaction.response.edit_message(content="Vui lòng chọn một emoji:", view=page_view)
 
         elif action == "upload_image":
-            await interaction.response.edit_message(content="<a:loading:1274398154694467614> Đang tạo thread riêng tư cho bạn...", view=None)
+            await interaction.response.edit_message(content="<:loading:1422121034827431936> Đang tạo thread riêng tư cho bạn...", view=None)
             
             try:
                 thread = await interaction.channel.create_thread(

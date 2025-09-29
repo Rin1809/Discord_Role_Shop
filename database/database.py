@@ -120,6 +120,37 @@ def execute_query(query, params=(), fetch=None):
         logging.error(f"Query that bai: {e}")
         return None
 
+def wipe_guild_data(guild_id):
+    # ham xoa toan bo du lieu cua 1 guild
+    role_ids_to_delete = set()
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # lay va xoa custom roles
+                cur.execute("DELETE FROM custom_roles WHERE guild_id = %s RETURNING role_id", (guild_id,))
+                deleted_custom_roles = cur.fetchall()
+                for role in deleted_custom_roles:
+                    role_ids_to_delete.add(role[0])
+                
+                # lay va xoa shop roles
+                cur.execute("DELETE FROM shop_roles WHERE guild_id = %s RETURNING role_id", (guild_id,))
+                deleted_shop_roles = cur.fetchall()
+                for role in deleted_shop_roles:
+                    role_ids_to_delete.add(role[0])
+
+                # xoa users va transactions
+                cur.execute("DELETE FROM users WHERE guild_id = %s", (guild_id,))
+                cur.execute("DELETE FROM transactions WHERE guild_id = %s", (guild_id,))
+                
+                conn.commit()
+        
+        logging.info(f"Da xoa toan bo du lieu database cho guild {guild_id}.")
+        return list(role_ids_to_delete)
+    except Exception as e:
+        logging.error(f"Loi khi xoa du lieu guild {guild_id}: {e}")
+        return []
+
+
 # User Functions
 def get_or_create_user(user_id, guild_id):
     user = execute_query("SELECT * FROM users WHERE user_id = %s AND guild_id = %s", (user_id, guild_id), fetch='one')
