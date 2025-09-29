@@ -512,10 +512,11 @@ class AccountActionSelect(Select):
 
 class AccountView(View):
     def __init__(self, bot, guild_config, guild_id: int, custom_role: dict = None):
-        super().__init__(timeout=300)
+        super().__init__(timeout=300) # 5 phut
         self.bot = bot
         self.guild_config = guild_config
         self.guild_id = guild_id
+        self.message = None # de luu tru message object
         
         # thay the cac nut bang 1 select menu duy nhat
         self.add_item(AccountActionSelect(
@@ -524,6 +525,18 @@ class AccountView(View):
             guild_id=self.guild_id,
             custom_role_data=custom_role
         ))
+    
+    async def on_timeout(self):
+        if self.message:
+            try:
+                # disable all components
+                for item in self.children:
+                    item.disabled = True
+                # edit the original message
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                # ko the edit DM (vd: user da xoa), bo qua loi
+                pass
 
 # --- END: Code nang cap ---
 
@@ -720,7 +733,8 @@ class ShopView(View):
         view = AccountView(bot=self.bot, guild_config=guild_config, guild_id=interaction.guild.id, custom_role=custom_role)
         
         try:
-            await interaction.user.send(embed=embed, view=view)
+            message = await interaction.user.send(embed=embed, view=view)
+            view.message = message # luu lai message de edit sau khi timeout
             await interaction.followup.send("✅ Đã gửi thông tin tài khoản vào tin nhắn riêng của bạn!", ephemeral=True)
         except discord.Forbidden:
             await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Tôi không thể gửi tin nhắn riêng cho bạn. Vui lòng bật tin nhắn từ thành viên server.", ephemeral=True)
