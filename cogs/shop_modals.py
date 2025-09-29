@@ -205,6 +205,16 @@ class RoleCreationProcessView(View):
             # TH sua role
             if self.role_to_edit:
                 await self.role_to_edit.edit(name=self.role_name, color=new_color, display_icon=final_icon_data, reason=f"User edit request")
+                
+                # move role to top for booster on edit
+                if self.is_booster:
+                    try:
+                        target_position = max(1, guild.me.top_role.position - 1)
+                        if self.role_to_edit.position < target_position:
+                            await self.role_to_edit.edit(position=target_position)
+                    except Exception as e:
+                        logging.warning(f"Failed to move role position on edit: {e}")
+
                 db.add_or_update_custom_role(interaction.user.id, guild.id, self.role_to_edit.id, self.role_name, f"#{self.color_int:06x}", self.style, self.color1_str, self.color2_str)
                 await self.notify_admin(interaction, "sửa")
                 
@@ -223,9 +233,11 @@ class RoleCreationProcessView(View):
 
             if self.is_booster:
                 try:
-                    target_position = guild.me.top_role.position - 1
+                    # ensure position is never 0
+                    target_position = max(1, guild.me.top_role.position - 1)
                     await new_role.edit(position=target_position)
-                except Exception: pass
+                except Exception as e: 
+                    logging.warning(f"Failed to move new role position: {e}")
             
             user_data = db.get_or_create_user(interaction.user.id, guild.id)
             new_balance = user_data['balance'] - self.creation_price
