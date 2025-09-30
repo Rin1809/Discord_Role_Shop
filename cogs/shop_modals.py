@@ -241,11 +241,22 @@ class RoleCreationProcessView(View):
                             await self.role_to_edit.edit(position=target_position)
                     except Exception as e:
                         logging.warning(f"Failed to move role position on edit: {e}")
+                
+                # phi edit role bootster
+                edit_price = self.guild_config.get('CUSTOM_ROLE_CONFIG', {}).get('EDIT_PRICE', 0)
+                fee_message = ""
+                if edit_price > 0:
+                    user_data = db.get_or_create_user(interaction.user.id, guild.id)
+                    new_balance = user_data['balance'] - edit_price
+                    db.update_user_data(interaction.user.id, guild.id, balance=new_balance)
+                    db.log_transaction(guild.id, interaction.user.id, 'edit_custom_role', self.role_name, -edit_price, new_balance)
+                    fee_message = f" Phí chỉnh sửa **{edit_price:,} coin** đã được trừ."
+   
 
                 db.add_or_update_custom_role(interaction.user.id, guild.id, self.role_to_edit.id, self.role_name, f"#{self.color_int:06x}", self.style, self.color1_str, self.color2_str)
                 await self.notify_admin(interaction, "sửa")
                 
-                msg_content = f"✅ Đã gửi yêu cầu chỉnh sửa role **{self.role_name}** đến admin. Vui lòng chờ."
+                msg_content = f"✅ Đã gửi yêu cầu chỉnh sửa role **{self.role_name}** đến admin. Vui lòng chờ.{fee_message}"
                 if thread:
                     await thread.send(msg_content)
                     await thread.edit(archived=True, locked=True)

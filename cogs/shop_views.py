@@ -358,12 +358,28 @@ class ManageCustomRoleActionSelect(Select):
         is_booster = member.premium_since is not None
 
         if action == "edit":
+            await interaction.response.defer(ephemeral=True, thinking=True)
+
+            # check so tien du de chinh sua role booster 
+            edit_price = self.guild_config.get('CUSTOM_ROLE_CONFIG', {}).get('EDIT_PRICE', 0)
+            if edit_price > 0:
+                user_data = db.get_or_create_user(interaction.user.id, guild.id)
+                if user_data['balance'] < edit_price:
+                    return await interaction.followup.send(
+                        f"Bạn không đủ coin để chỉnh sửa! Cần **{edit_price:,} coin** nhưng bạn chỉ có **{user_data['balance']:,}**.",
+                        ephemeral=True
+                    )
+           
+            
             if is_booster:
                 view = CustomRoleStyleSelectView(bot=self.bot, guild_config=self.guild_config, guild_id=self.guild_id, role_to_edit=self.role_to_edit, is_booster=True)
-                await interaction.response.send_message("Vui lòng chọn style bạn muốn đổi sang:", view=view, ephemeral=True)
+                await interaction.followup.send("Vui lòng chọn style bạn muốn đổi sang:", view=view, ephemeral=True)
             else:
                 modal = CustomRoleModal(bot=self.bot, guild_id=self.guild_id, guild_config=self.guild_config, style="Solid", is_booster=False, role_to_edit=self.role_to_edit)
+                original_interaction_response = interaction.original_response
+                await original_interaction_response.delete()
                 await interaction.response.send_modal(modal)
+
 
         elif action == "delete":
             embed = discord.Embed(
@@ -382,7 +398,7 @@ class ManageCustomRoleView(View):
         self.bot = bot
         self.add_item(ManageCustomRoleActionSelect(bot, guild_config, role_to_edit, guild_id))
 
-# --- START: Code nang cap ---
+
 
 class AccountActionSelect(Select):
     def __init__(self, bot, guild_config, guild_id: int, custom_role_data: dict = None):
@@ -512,7 +528,7 @@ class AccountActionSelect(Select):
 
 class AccountView(View):
     def __init__(self, bot, guild_config, guild_id: int, custom_role: dict = None):
-        super().__init__(timeout=300) # 5 phut
+        super().__init__(timeout=120) # 2 phut - timeout thao tac cua embed DM
         self.bot = bot
         self.guild_config = guild_config
         self.guild_id = guild_id
@@ -538,7 +554,6 @@ class AccountView(View):
                 # ko the edit DM (vd: user da xoa), bo qua loi
                 pass
 
-# --- END: Code nang cap ---
 
 class CustomRoleStyleSelect(Select):
     def __init__(self, bot, guild_config, guild_id, is_booster, min_creation_price=None, role_to_edit=None):
