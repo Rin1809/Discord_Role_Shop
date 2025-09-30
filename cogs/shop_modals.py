@@ -81,8 +81,16 @@ class IconActionSelect(Select):
     async def callback(self, interaction: discord.Interaction):
         action = self.values[0]
         
+        # FIX: Lay guild tu RoleCreationProcessView thay vi interaction
+        guild = self.view.bot.get_guild(self.view.guild_id)
+        if not guild:
+            return await interaction.response.send_message(
+                "❌ Lỗi: Không thể tìm thấy server. Vui lòng thử lại thao tác từ trong server.", 
+                ephemeral=True
+            )
+        
         if action == "select_emoji":
-            sorted_emojis = sorted(interaction.guild.emojis, key=lambda e: not e.animated)
+            sorted_emojis = sorted(guild.emojis, key=lambda e: not e.animated)
             if not sorted_emojis:
                 await interaction.response.send_message("Server này không có emoji nào.", ephemeral=True)
                 return
@@ -94,7 +102,14 @@ class IconActionSelect(Select):
             await interaction.response.edit_message(content="<a:loading:1422121034827431936> Đang tạo thread riêng tư cho bạn...", view=None)
             
             try:
-                thread = await interaction.channel.create_thread(
+                # Can channel object, but interaction in DM has no channel.
+                # Use original interaction from modal if available, otherwise get channel from bot
+                channel = interaction.channel
+                if not channel: # Fallback for rare cases
+                    # This path is unlikely if the interaction started from a modal submit
+                    return await interaction.edit_original_response(content=f"❌ Không thể xác định kênh để tạo thread.")
+
+                thread = await channel.create_thread(
                     name=f"Tải ảnh icon cho {interaction.user.display_name}",
                     type=discord.ChannelType.private_thread,
                     auto_archive_duration=60
@@ -157,10 +172,12 @@ class IconActionSelect(Select):
             await interaction.response.edit_message(content="Đã hủy thao tác.", view=None)
 
 class RoleCreationProcessView(View):
-    def __init__(self, bot, guild_config, role_name, color_int, style, color1_str, color2_str, creation_price, is_booster, role_to_edit):
-        super().__init__(timeout=300)
+    # FIX: Them guild_id vao constructor
+    def __init__(self, bot, guild_config, guild_id, role_name, color_int, style, color1_str, color2_str, creation_price, is_booster, role_to_edit):
+        super().__init__(timeout=50)
         self.bot = bot
         self.guild_config = guild_config
+        self.guild_id = guild_id # Luu lai guild_id
         self.role_name = role_name
         self.color_int = color_int
         self.style = style
@@ -179,8 +196,18 @@ class RoleCreationProcessView(View):
             await interaction.response.edit_message(content="<a:loading:1422121034827431936> Đang xử lý...", view=None)
 
         final_icon_data = icon
-        guild = interaction.guild
         new_role = None
+
+        # FIX: Lay guild object tu guild_id da luu, khong dung interaction.guild
+        guild = self.bot.get_guild(self.guild_id)
+        if not guild:
+            msg_content = "❌ Lỗi nghiêm trọng: Không thể xác định server. Vui lòng thử lại từ đầu."
+            if thread:
+                await thread.send(msg_content)
+                await thread.edit(archived=True, locked=True)
+            else:
+                await interaction.edit_original_response(content=msg_content, view=None)
+            return
 
         if icon_id:
             emoji_obj = guild.get_emoji(int(icon_id))
@@ -252,8 +279,8 @@ class RoleCreationProcessView(View):
                 timestamp=discord.utils.utcnow()
             )
             receipt_embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
-            if interaction.guild.icon:
-                receipt_embed.set_thumbnail(url=interaction.guild.icon.url)
+            if guild.icon:
+                receipt_embed.set_thumbnail(url=guild.icon.url)
             
             msg_content = ""
             if self.is_booster:
@@ -275,7 +302,7 @@ class RoleCreationProcessView(View):
 
             if self.guild_config.get('SHOP_EMBED_IMAGE_URL'):
                 receipt_embed.set_image(url=self.guild_config.get('SHOP_EMBED_IMAGE_URL'))
-            receipt_embed.set_footer(text=f"Cảm ơn bạn đã giao dịch tại {interaction.guild.name}", icon_url=self.bot.user.avatar.url)
+            receipt_embed.set_footer(text=f"Cảm ơn bạn đã giao dịch tại {guild.name}", icon_url=self.bot.user.avatar.url)
 
             # gui bien lai
             try:
@@ -513,9 +540,11 @@ class CustomRoleModal(Modal):
         if not self.role_to_edit and user_data['balance'] < creation_price:
             return await interaction.followup.send(f"Bạn không đủ coin! Cần **{creation_price:,} coin** nhưng bạn chỉ có **{user_data['balance']:,}**.", ephemeral=True)
 
+        # FIX: Truyen them guild_id vao view
         view = RoleCreationProcessView(
             bot=self.bot,
             guild_config=self.guild_config,
+            guild_id=self.guild_id,
             role_name=role_name,
             color_int=color_int,
             style=self.style,
