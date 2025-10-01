@@ -555,7 +555,7 @@ class CustomRoleModal(Modal):
         if not self.role_to_edit and user_data['balance'] < creation_price:
             return await interaction.followup.send(f"Bạn không đủ coin! Cần **{creation_price:,} coin** nhưng bạn chỉ có **{user_data['balance']:,}**.", ephemeral=True)
 
-        # FIX: Truyen them guild_id vao view
+        # Truyen them guild_id vao view
         view = RoleCreationProcessView(
             bot=self.bot,
             guild_config=self.guild_config,
