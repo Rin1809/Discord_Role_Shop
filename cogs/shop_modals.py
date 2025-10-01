@@ -231,7 +231,9 @@ class RoleCreationProcessView(View):
         try:
             # TH sua role
             if self.role_to_edit:
-                await self.role_to_edit.edit(name=self.role_name, color=new_color, display_icon=final_icon_data, reason=f"User edit request")
+                # START CHANGE: Khong sua ten va mau de bao toan style admin da set. Chi sua icon.
+                await self.role_to_edit.edit(display_icon=final_icon_data, reason=f"User edit icon request")
+                # END CHANGE
                 
                 # move role to top for booster on edit
                 if self.is_booster:
@@ -539,7 +541,9 @@ class CustomRoleModal(Modal):
 
         creation_price = 0
         if self.is_booster:
-            creation_price = self.guild_config.get('CUSTOM_ROLE_CONFIG', {}).get('PRICE', 1000)
+            # khi edit, khong can check gia
+            if not self.role_to_edit:
+                creation_price = self.guild_config.get('CUSTOM_ROLE_CONFIG', {}).get('PRICE', 1000)
         else:
             try:
                 creation_price = int(bid_str)
