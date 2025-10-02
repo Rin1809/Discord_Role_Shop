@@ -357,29 +357,28 @@ class ManageCustomRoleActionSelect(Select):
 
         is_booster = member.premium_since is not None
 
-        if action == "edit":
-            await interaction.response.defer(ephemeral=True, thinking=True)
-
-            # check so tien du de chinh sua role booster 
+        if action == 'edit':
+            # Ktra so du truoc khi phan hoi
             edit_price = self.guild_config.get('CUSTOM_ROLE_CONFIG', {}).get('EDIT_PRICE', 0)
             if edit_price > 0:
                 user_data = db.get_or_create_user(interaction.user.id, guild.id)
                 if user_data['balance'] < edit_price:
-                    return await interaction.followup.send(
+                    await interaction.response.send_message(
                         f"Bạn không đủ coin để chỉnh sửa! Cần **{edit_price:,} coin** nhưng bạn chỉ có **{user_data['balance']:,}**.",
                         ephemeral=True
                     )
-           
+                    return
             
+            # Phan luong phan hoi
             if is_booster:
+                # Luong cho booster: defer -> followup voi view moi
+                await interaction.response.defer(ephemeral=True)
                 view = CustomRoleStyleSelectView(bot=self.bot, guild_config=self.guild_config, guild_id=self.guild_id, role_to_edit=self.role_to_edit, is_booster=True)
-                await interaction.followup.send("Vui lòng chọn style bạn muốn đổi sang:", view=view, ephemeral=True)
+                await interaction.followup.send("✨ Vui lòng chọn style bạn muốn đổi sang:", view=view, ephemeral=True)
             else:
+                # Luong cho member thuong: mo modal truc tiep
                 modal = CustomRoleModal(bot=self.bot, guild_id=self.guild_id, guild_config=self.guild_config, style="Solid", is_booster=False, role_to_edit=self.role_to_edit)
-                original_interaction_response = interaction.original_response
-                await original_interaction_response.delete()
                 await interaction.response.send_modal(modal)
-
 
         elif action == "delete":
             embed = discord.Embed(
@@ -528,13 +527,12 @@ class AccountActionSelect(Select):
 
 class AccountView(View):
     def __init__(self, bot, guild_config, guild_id: int, custom_role: dict = None):
-        super().__init__(timeout=120) # 2 phut - timeout thao tac cua embed DM
+        super().__init__(timeout=120) 
         self.bot = bot
         self.guild_config = guild_config
         self.guild_id = guild_id
-        self.message = None # de luu tru message object
+        self.message = None 
         
-        # thay the cac nut bang 1 select menu duy nhat
         self.add_item(AccountActionSelect(
             bot=self.bot, 
             guild_config=self.guild_config, 
@@ -545,13 +543,10 @@ class AccountView(View):
     async def on_timeout(self):
         if self.message:
             try:
-                # disable all components
                 for item in self.children:
                     item.disabled = True
-                # edit the original message
                 await self.message.edit(view=self)
             except discord.HTTPException:
-                # ko the edit DM (vd: user da xoa), bo qua loi
                 pass
 
 
@@ -582,7 +577,15 @@ class CustomRoleStyleSelect(Select):
             is_booster=self.is_booster,
             role_to_edit=self.role_to_edit
         )
+        
         await interaction.response.send_modal(modal)
+        
+
+        try:
+            await interaction.delete_original_response()
+        except (discord.NotFound, discord.HTTPException) as e:
+            print(f"Non-critical error while deleting original response: {e}")
+            pass
 
 class CustomRoleStyleSelectView(View):
     def __init__(self, bot, guild_config, guild_id, is_booster, min_creation_price=None, role_to_edit=None):
