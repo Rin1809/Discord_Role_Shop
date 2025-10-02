@@ -26,12 +26,14 @@ class TasksHandler(commands.Cog):
                     continue
 
                 guild = self.bot.get_guild(guild_id)
-                if not guild:
+                if not guild or not guild.me.guild_permissions.manage_roles:
                     continue
                 
                 all_custom_roles = db.get_all_custom_roles_for_guild(guild_id)
                 if not all_custom_roles:
                     continue
+                
+                valid_booster_roles_to_position = []
 
                 for custom_role_data in all_custom_roles:
                     user_id = custom_role_data['user_id']
@@ -59,7 +61,6 @@ class TasksHandler(commands.Cog):
                         role_to_delete = guild.get_role(role_id)
                         
                         if role_to_delete:
-                            # gui dm truoc khi xoa
                             try:
                                 dm_message = (
                                     f"Chào bạn, role tùy chỉnh **{role_to_delete.name}** của bạn tại server **{guild.name}** "
@@ -76,6 +77,44 @@ class TasksHandler(commands.Cog):
                         
                         db.delete_custom_role_data(user_id, guild_id)
                         logging.info(f"Da xoa role tuy chinh cua {member.name} (khong du boost) khoi guild {guild_id}")
+                        continue
+                    
+                    # Neu member van hop le, them role vao danh sach de sap xep
+                    role_obj = guild.get_role(role_id)
+                    if role_obj:
+                        valid_booster_roles_to_position.append(role_obj)
+
+                # Sap xep lai toan bo role booster hop le trong 1 lan
+                if not valid_booster_roles_to_position:
+                    continue
+
+                try:
+                    target_top_position = guild.me.top_role.position - 1
+                    
+                    # Sap xep cac role theo vi tri hien tai de giu thu tu tuong doi on dinh
+                    sorted_roles = sorted(valid_booster_roles_to_position, key=lambda r: r.position, reverse=True)
+                    
+                    positions_payload = {}
+                    has_changes = False
+                    for i, role in enumerate(sorted_roles):
+                        new_position = target_top_position - i
+                        # Dam bao vi tri khong bao gio < 1
+                        if new_position < 1: new_position = 1
+                        
+                        positions_payload[role] = new_position
+                        if role.position != new_position:
+                            has_changes = True
+
+                    # Chi goi API neu co thay doi can thiet
+                    if has_changes:
+                        await guild.edit_role_positions(positions=positions_payload, reason="Dinh ky sap xep toan bo role booster")
+                        logging.info(f"Da sap xep lai {len(positions_payload)} role booster cho guild {guild.name}")
+
+                except discord.Forbidden:
+                    logging.warning(f"Khong co quyen de sap xep hang loat role trong guild {guild.name}")
+                except Exception as e:
+                    logging.error(f"Loi khi sap xep hang loat role booster trong guild {guild.name}: {e}")
+
 
             except Exception as e:
                 logging.error(f"Loi khi check custom role cho guild {guild_id_str}: {e}")
