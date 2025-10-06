@@ -81,7 +81,6 @@ class IconActionSelect(Select):
     async def callback(self, interaction: discord.Interaction):
         action = self.values[0]
         
-        # FIX: Lay guild tu RoleCreationProcessView thay vi interaction
         guild = self.view.bot.get_guild(self.view.guild_id)
         if not guild:
             return await interaction.response.send_message(
@@ -101,20 +100,31 @@ class IconActionSelect(Select):
         elif action == "upload_image":
             await interaction.response.edit_message(content="<a:loading:1422121034827431936> Đang tạo thread riêng tư cho bạn...", view=None)
             
-            try:
-                # Can channel object, but interaction in DM has no channel.
-                # Use original interaction from modal if available, otherwise get channel from bot
-                channel = interaction.channel
-                if not channel: # Fallback for rare cases
-                    # This path is unlikely if the interaction started from a modal submit
-                    return await interaction.edit_original_response(content=f"❌ Không thể xác định kênh để tạo thread.")
+            # START FIX: Tao thread trong server channel thay vi DM
+            shop_channel_id = self.view.guild_config.get('shop_channel_id')
+            if not shop_channel_id:
+                return await interaction.edit_original_response(
+                    content="❌ Không thể tạo thread. Admin chưa cấu hình kênh shop cho server này."
+                )
+            
+            shop_channel = self.view.bot.get_channel(int(shop_channel_id))
+            if not shop_channel:
+                 return await interaction.edit_original_response(
+                    content=f"❌ Không thể tạo thread. Không tìm thấy kênh shop với ID: `{shop_channel_id}`."
+                )
+            # END FIX
 
-                thread = await channel.create_thread(
+            try:
+                thread = await shop_channel.create_thread(
                     name=f"Tải ảnh icon cho {interaction.user.display_name}",
                     type=discord.ChannelType.private_thread,
                     auto_archive_duration=60
                 )
                 await thread.add_user(interaction.user)
+            except discord.Forbidden:
+                logging.error(f"Thieu quyen tao thread trong channel {shop_channel.id}")
+                await interaction.edit_original_response(content=f"❌ Tôi không có quyền tạo thread trong kênh {shop_channel.mention}. Vui lòng liên hệ admin.")
+                return
             except Exception as e:
                 logging.error(f"Loi tao thread: {e}")
                 await interaction.edit_original_response(content=f"❌ Không thể tạo thread riêng. Vui lòng thử lại hoặc liên hệ admin. Lỗi: `{e}`")
@@ -134,7 +144,7 @@ class IconActionSelect(Select):
                     ),
                     files=[gif1, gif2]
                 )
-                await interaction.edit_original_response(content=f"✅ Đã tạo một thread riêng tư. Vui lòng vào {thread.mention} để tải ảnh lên.")
+                await interaction.edit_original_response(content=f"✅ Đã tạo một thread riêng tư trong server. Vui lòng vào {thread.mention} để tải ảnh lên.")
             except FileNotFoundError:
                  await thread.send(
                     content=(
@@ -144,7 +154,7 @@ class IconActionSelect(Select):
                         f"- Bạn có `2 phút` để gửi ảnh."
                     )
                 )
-                 await interaction.edit_original_response(content=f"✅ Đã tạo một thread riêng tư. Vui lòng vào {thread.mention} để tải ảnh lên.")
+                 await interaction.edit_original_response(content=f"✅ Đã tạo một thread riêng tư trong server. Vui lòng vào {thread.mention} để tải ảnh lên.")
             
             def check(m):
                 return m.author.id == interaction.user.id and m.channel.id == thread.id and m.attachments
@@ -172,12 +182,11 @@ class IconActionSelect(Select):
             await interaction.response.edit_message(content="Đã hủy thao tác.", view=None)
 
 class RoleCreationProcessView(View):
-    # FIX: Them guild_id vao constructor
     def __init__(self, bot, guild_config, guild_id, role_name, color_int, style, color1_str, color2_str, creation_price, is_booster, role_to_edit):
         super().__init__(timeout=50)
         self.bot = bot
         self.guild_config = guild_config
-        self.guild_id = guild_id # Luu lai guild_id
+        self.guild_id = guild_id 
         self.role_name = role_name
         self.color_int = color_int
         self.style = style
@@ -198,7 +207,6 @@ class RoleCreationProcessView(View):
         final_icon_data = icon
         new_role = None
 
-        # FIX: Lay guild object tu guild_id da luu, khong dung interaction.guild
         guild = self.bot.get_guild(self.guild_id)
         if not guild:
             msg_content = "❌ Lỗi nghiêm trọng: Không thể xác định server. Vui lòng thử lại từ đầu."
@@ -231,11 +239,8 @@ class RoleCreationProcessView(View):
         try:
             # TH sua role
             if self.role_to_edit:
-                # START CHANGE: Khong sua ten va mau de bao toan style admin da set. Chi sua icon.
                 await self.role_to_edit.edit(display_icon=final_icon_data, reason=f"User edit icon request")
-                # END CHANGE
                 
-                # move role to top for booster on edit
                 if self.is_booster:
                     try:
                         target_position = max(1, guild.me.top_role.position - 1)
@@ -244,7 +249,6 @@ class RoleCreationProcessView(View):
                     except Exception as e:
                         logging.warning(f"Failed to move role position on edit: {e}")
                 
-                # phi edit role bootster
                 edit_price = self.guild_config.get('CUSTOM_ROLE_CONFIG', {}).get('EDIT_PRICE', 0)
                 fee_message = ""
                 if edit_price > 0:
@@ -273,7 +277,6 @@ class RoleCreationProcessView(View):
 
             if self.is_booster:
                 try:
-                    # ensure position is never 0
                     target_position = max(1, guild.me.top_role.position - 1)
                     await new_role.edit(position=target_position)
                 except Exception as e: 
@@ -284,7 +287,6 @@ class RoleCreationProcessView(View):
             db.update_user_data(interaction.user.id, guild.id, balance=new_balance)
             db.log_transaction(guild.id, interaction.user.id, 'create_custom_role', self.role_name, -self.creation_price, new_balance)
 
-            # tao bien lai
             receipt_embed = discord.Embed(
                 title="Biên Lai Giao Dịch Tạo Role",
                 description="Giao dịch của bạn đã được xử lý thành công.",
@@ -317,7 +319,6 @@ class RoleCreationProcessView(View):
                 receipt_embed.set_image(url=self.guild_config.get('SHOP_EMBED_IMAGE_URL'))
             receipt_embed.set_footer(text=f"Cảm ơn bạn đã giao dịch tại {guild.name}", icon_url=self.bot.user.avatar.url)
 
-            # gui bien lai
             try:
                 await interaction.user.send(embed=receipt_embed)
                 final_msg = msg_content + "\nBiên lai đã được gửi vào tin nhắn riêng của bạn."
@@ -541,7 +542,6 @@ class CustomRoleModal(Modal):
 
         creation_price = 0
         if self.is_booster:
-            # khi edit, khong can check gia
             if not self.role_to_edit:
                 creation_price = self.guild_config.get('CUSTOM_ROLE_CONFIG', {}).get('PRICE', 1000)
         else:
@@ -555,7 +555,6 @@ class CustomRoleModal(Modal):
         if not self.role_to_edit and user_data['balance'] < creation_price:
             return await interaction.followup.send(f"Bạn không đủ coin! Cần **{creation_price:,} coin** nhưng bạn chỉ có **{user_data['balance']:,}**.", ephemeral=True)
 
-        # Truyen them guild_id vao view
         view = RoleCreationProcessView(
             bot=self.bot,
             guild_config=self.guild_config,
