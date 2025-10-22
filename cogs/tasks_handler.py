@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands, tasks
 from database import database as db
 import logging
+from collections import Counter
 
 class TasksHandler(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -9,10 +10,68 @@ class TasksHandler(commands.Cog):
         self.leaderboard_messages = {}
         self.update_leaderboard.start()
         self.check_custom_roles.start()
+        self.sync_real_boosts.start() # Khoi dong task moi
 
     def cog_unload(self):
         self.update_leaderboard.cancel()
         self.check_custom_roles.cancel()
+        self.sync_real_boosts.cancel() # Huy task khi unload
+
+    @tasks.loop(minutes=5)
+    async def sync_real_boosts(self):
+        """
+        Task nay dem so luong boost thuc te cua moi thanh vien va dong bo vao database.
+        """
+        logging.info("Bat dau dong bo so luong boost thuc te...")
+        for guild_id_str in self.bot.guild_configs.keys():
+            try:
+                guild_id = int(guild_id_str)
+                guild = self.bot.get_guild(guild_id)
+                if not guild:
+                    continue
+
+                # 1. Dem so boost thuc te tu danh sach premium_subscribers
+                # Counter se dem so lan xuat hien cua moi user_id
+                real_boost_counts = Counter(member.id for member in guild.premium_subscribers)
+                
+                # 2. Lay danh sach user hien co real_boosts trong DB de reset
+                users_to_reset = db.execute_query(
+                    "SELECT user_id FROM users WHERE guild_id = %s AND real_boosts > 0",
+                    (guild_id,),
+                    fetch='all'
+                )
+                user_ids_to_reset = {user['user_id'] for user in users_to_reset} if users_to_reset else set()
+
+                # 3. Update DB
+                updated_users = set()
+                with db.get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        # Update so boost cho nhung nguoi dang boost
+                        for user_id, count in real_boost_counts.items():
+                            db.get_or_create_user(user_id, guild_id) # Dam bao user ton tai
+                            cur.execute(
+                                "UPDATE users SET real_boosts = %s WHERE user_id = %s AND guild_id = %s",
+                                (count, user_id, guild_id)
+                            )
+                            updated_users.add(user_id)
+                        
+                        # Reset so boost cho nhung nguoi da het boost
+                        users_who_stopped_boosting = user_ids_to_reset - updated_users
+                        if users_who_stopped_boosting:
+                            # Chuyen set thanh tuple de query
+                            cur.execute(
+                                "UPDATE users SET real_boosts = 0 WHERE user_id = ANY(%s) AND guild_id = %s",
+                                (list(users_who_stopped_boosting), guild_id)
+                            )
+                        conn.commit()
+                logging.info(f"Dong bo boost cho guild {guild.name} thanh cong. {len(updated_users)} nguoi dang boost.")
+
+            except Exception as e:
+                logging.error(f"Loi khi dong bo boost that cho guild {guild_id_str}: {e}")
+
+    @sync_real_boosts.before_loop
+    async def before_sync_real_boosts(self):
+        await self.bot.wait_until_ready()
 
     @tasks.loop(minutes=5)
     async def check_custom_roles(self):
@@ -53,9 +112,11 @@ class TasksHandler(commands.Cog):
                     # TH: con o server, check dieu kien
                     user_db_data = db.get_or_create_user(user_id, guild_id)
                     
-                    effective_boost_count = user_db_data.get('fake_boosts', 0)
-                    if effective_boost_count == 0 and member.premium_since:
-                        effective_boost_count = sum(1 for m in guild.premium_subscribers if m.id == member.id)
+                    # Uu tien so boost that da duoc dong bo
+                    real_boosts = user_db_data.get('real_boosts', 0)
+                    fake_boosts = user_db_data.get('fake_boosts', 0)
+                    
+                    effective_boost_count = fake_boosts if fake_boosts > 0 else real_boosts
 
                     if effective_boost_count < min_boosts:
                         role_to_delete = guild.get_role(role_id)
@@ -196,7 +257,10 @@ class TasksHandler(commands.Cog):
 
             except discord.NotFound:
                 try:
-                    self.leaderboard_messages[thread_id] = await thread.send(embed=embed)
+                    # Neu khong tim thay tin nhan, tao tin moi
+                    thread = self.bot.get_channel(thread_id)
+                    if thread:
+                         self.leaderboard_messages[thread_id] = await thread.send(embed=embed)
                 except Exception as e:
                     logging.error(f"Gui tin nhan BXH moi that bai: {e}")
             except Exception as e:

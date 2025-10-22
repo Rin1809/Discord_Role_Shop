@@ -97,6 +97,13 @@ def init_db(database_url: str):
                     if col not in existing_shop_cols:
                         cur.execute(f"ALTER TABLE shop_roles ADD COLUMN {col} {col_type}")
 
+                # kiem tra & them cot real_boosts vao bang users
+                cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'")
+                existing_user_cols = [row[0] for row in cur.fetchall()]
+                if 'real_boosts' not in existing_user_cols:
+                    cur.execute("ALTER TABLE users ADD COLUMN real_boosts INTEGER DEFAULT 0")
+
+
                 conn.commit()
         logging.info("Database PostgreSQL khoi tao thanh cong.")
     except Exception as e:
