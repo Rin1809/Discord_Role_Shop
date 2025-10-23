@@ -10,17 +10,18 @@ class TasksHandler(commands.Cog):
         self.leaderboard_messages = {}
         self.update_leaderboard.start()
         self.check_custom_roles.start()
-        self.sync_real_boosts.start() # Khoi dong task moi
+        self.sync_real_boosts.start()
 
     def cog_unload(self):
         self.update_leaderboard.cancel()
         self.check_custom_roles.cancel()
-        self.sync_real_boosts.cancel() # Huy task khi unload
+        self.sync_real_boosts.cancel()
 
     @tasks.loop(minutes=5)
     async def sync_real_boosts(self):
         """
-        Task nay dem so luong boost thuc te cua moi thanh vien va dong bo vao database.
+        Dong bo so luong boost thuc te cua moi thanh vien vao database.
+        Logic duoc toi uu de dam bao tinh toan chinh xac.
         """
         logging.info("Bat dau dong bo so luong boost thuc te...")
         for guild_id_str in self.bot.guild_configs.keys():
@@ -30,41 +31,47 @@ class TasksHandler(commands.Cog):
                 if not guild:
                     continue
 
-                # 1. Dem so boost thuc te tu danh sach premium_subscribers
-                # Counter se dem so lan xuat hien cua moi user_id
-                real_boost_counts = Counter(member.id for member in guild.premium_subscribers)
-                
-                # 2. Lay danh sach user hien co real_boosts trong DB de reset
-                users_to_reset = db.execute_query(
-                    "SELECT user_id FROM users WHERE guild_id = %s AND real_boosts > 0",
+                # Kiem tra va dam bao cache thanh vien da day du truoc khi xu ly.
+                # Day la buoc quan trong de tranh viec guild.premium_subscribers bi trong.
+                if not guild.chunked:
+                    try:
+                        logging.info(f"Cache thanh vien cho guild '{guild.name}' chua hoan tat. Dang tai...")
+                        await guild.chunk()
+                        logging.info(f"Tai cache thanh vien cho guild '{guild.name}' hoan tat.")
+                    except Exception as e:
+                        logging.error(f"Loi khi tai cache thanh vien cho guild {guild.id}: {e}")
+
+                # B1: Lay so luong boost hien tai tu Discord API
+                current_api_boosts = Counter(member.id for member in guild.premium_subscribers)
+
+                # B2: Lay trang thai boost hien tai tu database
+                users_in_db_with_boosts = db.execute_query(
+                    "SELECT user_id, real_boosts FROM users WHERE guild_id = %s AND real_boosts > 0",
                     (guild_id,),
                     fetch='all'
                 )
-                user_ids_to_reset = {user['user_id'] for user in users_to_reset} if users_to_reset else set()
+                current_db_boosts = {user['user_id']: user['real_boosts'] for user in users_in_db_with_boosts} if users_in_db_with_boosts else {}
 
-                # 3. Update DB
-                updated_users = set()
-                with db.get_db_connection() as conn:
-                    with conn.cursor() as cur:
-                        # Update so boost cho nhung nguoi dang boost
-                        for user_id, count in real_boost_counts.items():
-                            db.get_or_create_user(user_id, guild_id) # Dam bao user ton tai
-                            cur.execute(
-                                "UPDATE users SET real_boosts = %s WHERE user_id = %s AND guild_id = %s",
-                                (count, user_id, guild_id)
-                            )
-                            updated_users.add(user_id)
-                        
-                        # Reset so boost cho nhung nguoi da het boost
-                        users_who_stopped_boosting = user_ids_to_reset - updated_users
-                        if users_who_stopped_boosting:
-                            # Chuyen set thanh tuple de query
-                            cur.execute(
-                                "UPDATE users SET real_boosts = 0 WHERE user_id = ANY(%s) AND guild_id = %s",
-                                (list(users_who_stopped_boosting), guild_id)
-                            )
-                        conn.commit()
-                logging.info(f"Dong bo boost cho guild {guild.name} thanh cong. {len(updated_users)} nguoi dang boost.")
+                updated_count = 0
+                
+                # B3: Cap nhat nguoi dung dang boost
+                # (nguoi moi, hoac nguoi co thay doi so luong boost)
+                for user_id, api_count in current_api_boosts.items():
+                    db.get_or_create_user(user_id, guild_id) # dam bao user ton tai
+                    if current_db_boosts.get(user_id) != api_count:
+                        db.update_user_data(user_id, guild_id, real_boosts=api_count)
+                        updated_count += 1
+
+                # B4: Reset so boost cho nguoi dung da ngung boost
+                stopped_boosting_users = set(current_db_boosts.keys()) - set(current_api_boosts.keys())
+                for user_id in stopped_boosting_users:
+                    db.update_user_data(user_id, guild_id, real_boosts=0)
+                    updated_count += 1
+                
+                if updated_count > 0:
+                    logging.info(f"Dong bo boost cho guild '{guild.name}' thanh cong. Da cap nhat {updated_count} thanh vien.")
+                else:
+                    logging.info(f"Khong co thay doi boost nao cho guild '{guild.name}'.")
 
             except Exception as e:
                 logging.error(f"Loi khi dong bo boost that cho guild {guild_id_str}: {e}")

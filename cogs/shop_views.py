@@ -654,9 +654,10 @@ class ShopActionSelect(Select):
             booster_config = guild_config.get('CUSTOM_ROLE_CONFIG', {})
             min_boosts = booster_config.get('MIN_BOOST_COUNT', 99)
             
-            boost_count = user_data.get('fake_boosts', 0)
-            if boost_count == 0 and interaction.user.premium_since:
-                boost_count = sum(1 for m in interaction.guild.premium_subscribers if m.id == interaction.user.id)
+            # lay so boost tu db da duoc dong bo
+            fake_boosts = user_data.get('fake_boosts', 0)
+            real_boosts = user_data.get('real_boosts', 0)
+            boost_count = fake_boosts if fake_boosts > 0 else real_boosts
 
             if boost_count < min_boosts:
                 msg = messages.get('CUSTOM_ROLE_NO_BOOSTS', "Bạn cần có ít nhất {min_boosts} boost để dùng tính năng này.").format(min_boosts=min_boosts, boost_count=boost_count)
@@ -730,9 +731,10 @@ class ShopView(View):
         if currency_cog:
             multiplier = currency_cog._get_boost_multiplier(interaction.user, guild_config, user_data)
             
-            boost_count = user_data.get('fake_boosts', 0)
-            if boost_count == 0 and interaction.user.premium_since:
-                 boost_count = sum(1 for m in interaction.guild.premium_subscribers if m.id == interaction.user.id)
+            # lay so boost tu db da duoc dong bo
+            fake_boosts = user_data.get('fake_boosts', 0)
+            real_boosts = user_data.get('real_boosts', 0)
+            boost_count = fake_boosts if fake_boosts > 0 else real_boosts
 
             if multiplier > 1.0:
                 embed.add_field(
