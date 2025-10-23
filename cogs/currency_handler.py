@@ -4,18 +4,44 @@ from database import database as db
 import logging
 from collections import Counter
 
-class TasksHandler(commands.Cog):
+class CurrencyHandler(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.leaderboard_messages = {}
         self.update_leaderboard.start()
         self.check_custom_roles.start()
-        self.sync_real_boosts.start() # Khoi dong task moi
+        self.sync_real_boosts.start() 
 
     def cog_unload(self):
         self.update_leaderboard.cancel()
         self.check_custom_roles.cancel()
-        self.sync_real_boosts.cancel() # Huy task khi unload
+        self.sync_real_boosts.cancel()
+
+    def _get_boost_multiplier(self, member: discord.Member, guild_config: dict, user_data: dict) -> float:
+        """tinh toan he so nhan coin cho booster."""
+        booster_config = guild_config.get('BOOSTER_MULTIPLIER_CONFIG', {})
+        
+        # kiem tra xem tinh nang co bat khong
+        if not booster_config.get('ENABLED', False):
+            return 1.0
+
+        # uu tien fake_boosts
+        fake_boosts = user_data.get('fake_boosts', 0)
+        real_boosts = user_data.get('real_boosts', 0)
+        effective_boost_count = fake_boosts if fake_boosts > 0 else real_boosts
+
+        if effective_boost_count <= 0:
+            return 1.0
+
+        base_multiplier = booster_config.get('BASE_MULTIPLIER', 1.0)
+        per_boost_addition = booster_config.get('PER_BOOST_ADDITION', 0.0)
+
+        # tinh toan he so
+        # boost dau tien se nhan base_multiplier
+        # moi boost them se cong them per_boost_addition
+        final_multiplier = base_multiplier + ((effective_boost_count - 1) * per_boost_addition)
+        
+        return max(1.0, final_multiplier) # dam bao khong bao gio < 1.0
 
     @tasks.loop(minutes=5)
     async def sync_real_boosts(self):
@@ -30,6 +56,17 @@ class TasksHandler(commands.Cog):
                 guild = self.bot.get_guild(guild_id)
                 if not guild:
                     continue
+
+                # FIX START: Dam bao cache thanh vien da day du truoc khi xu ly.
+                # Day la buoc quan trong de tranh viec guild.premium_subscribers bi trong/thieu.
+                if not guild.chunked:
+                    try:
+                        logging.info(f"Cache thanh vien cho guild '{guild.name}' chua hoan tat. Dang tai...")
+                        await guild.chunk()
+                        logging.info(f"Tai cache thanh vien cho guild '{guild.name}' hoan tat.")
+                    except Exception as e:
+                        logging.error(f"Loi khi tai cache thanh vien cho guild {guild.id}: {e}")
+                # FIX END
 
                 # B1: Lay so luong boost hien tai tu Discord API
                 current_api_boosts = Counter(member.id for member in guild.premium_subscribers)
@@ -269,4 +306,4 @@ class TasksHandler(commands.Cog):
         await self.bot.wait_until_ready()
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(TasksHandler(bot))
+    await bot.add_cog(CurrencyHandler(bot))

@@ -3,6 +3,7 @@ from discord.ui import Button, View, Select
 from database import database as db
 from .shop_modals import CustomRoleModal, SellModal
 import math
+import logging
 
 ROLES_PER_PAGE = 5
 
@@ -695,69 +696,80 @@ class ShopView(View):
 
     @discord.ui.button(label="Tài khoản của tôi / Cách sử dụng", style=discord.ButtonStyle.secondary, custom_id="shop_view:account", emoji="<a:z_cat_yolo:1326542766330740818>")
     async def account_button_callback(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.defer(ephemeral=True)
-
-        guild_config = self.bot.guild_configs.get(str(interaction.guild.id))
-        if not guild_config:
-            return await interaction.followup.send("Lỗi: Không tìm thấy config cho server.", ephemeral=True)
-        
-        messages = guild_config.get('MESSAGES', {})
-        embed_color = discord.Color(int(str(guild_config.get('EMBED_COLOR', '#ff00af')).lstrip('#'), 16))
-        
-        user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
-
-        embed = discord.Embed(
-            title=messages.get('ACCOUNT_INFO_TITLE', "Tài khoản"),
-            description=messages.get('ACCOUNT_INFO_DESC', ''),
-            color=embed_color
-        )
-        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
-        
-        if interaction.guild.icon:
-            embed.set_thumbnail(url=interaction.guild.icon.url)
-
-        balance_str = messages.get('BALANCE_FIELD_VALUE', "{balance} coin").format(balance=f"{user_data['balance']:,}")
-        embed.add_field(name=f"```{messages.get('BALANCE_FIELD_NAME', 'Số dư')}```", value=balance_str, inline=False)
-        
-        shop_roles_db = db.get_shop_roles(interaction.guild.id)
-        if shop_roles_db:
-            shop_role_ids = {r['role_id'] for r in shop_roles_db}
-            owned_roles = [f"`{role.name}`" for role in interaction.user.roles if role.id in shop_role_ids]
-            
-            owned_roles_str = "\n".join(owned_roles) if owned_roles else "Chưa sở hữu role nào."
-            embed.add_field(name="<:MenheraFlower:1406458230317645906> Role Shop đã sở hữu", value=owned_roles_str, inline=False)
-
-        currency_cog = self.bot.get_cog("CurrencyHandler")
-        if currency_cog:
-            multiplier = currency_cog._get_boost_multiplier(interaction.user, guild_config, user_data)
-            
-            # lay so boost tu db da duoc dong bo
-            fake_boosts = user_data.get('fake_boosts', 0)
-            real_boosts = user_data.get('real_boosts', 0)
-            boost_count = fake_boosts if fake_boosts > 0 else real_boosts
-
-            if multiplier > 1.0:
-                embed.add_field(
-                    name="<a:zgif_BoosterBadgesRoll:1406487084583358474> Ưu Đãi Booster",
-                    value=f"```diff\n+ Bạn đang nhận x{multiplier:.1f} coin từ {boost_count} boost!\n```",
-                    inline=False
-                )
-
-        if guild_config.get('SHOP_EMBED_IMAGE_URL'):
-            embed.set_image(url=guild_config['SHOP_EMBED_IMAGE_URL'])
-
-        footer_text = guild_config.get('FOOTER_MESSAGES', {}).get('ACCOUNT_INFO', '')
-        embed.set_footer(text=f"────────────────────\n{footer_text}", icon_url=self.bot.user.avatar.url)
-        
-        custom_role = db.get_custom_role(interaction.user.id, interaction.guild.id)
-        view = AccountView(bot=self.bot, guild_config=guild_config, guild_id=interaction.guild.id, custom_role=custom_role)
-        
         try:
-            message = await interaction.user.send(embed=embed, view=view)
-            view.message = message # luu lai message de edit sau khi timeout
-            await interaction.followup.send("✅ Đã gửi thông tin tài khoản vào tin nhắn riêng của bạn!", ephemeral=True)
-        except discord.Forbidden:
-            await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Tôi không thể gửi tin nhắn riêng cho bạn. Vui lòng bật tin nhắn từ thành viên server.", ephemeral=True)
+            await interaction.response.defer(ephemeral=True)
+
+            guild_config = self.bot.guild_configs.get(str(interaction.guild.id))
+            if not guild_config:
+                return await interaction.followup.send("Lỗi: Không tìm thấy config cho server.", ephemeral=True)
+            
+            messages = guild_config.get('MESSAGES', {})
+            embed_color = discord.Color(int(str(guild_config.get('EMBED_COLOR', '#ff00af')).lstrip('#'), 16))
+            
+            user_data = db.get_or_create_user(interaction.user.id, interaction.guild.id)
+
+            embed = discord.Embed(
+                title=messages.get('ACCOUNT_INFO_TITLE', "Tài khoản"),
+                description=messages.get('ACCOUNT_INFO_DESC', ''),
+                color=embed_color
+            )
+            embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+            
+            if interaction.guild.icon:
+                embed.set_thumbnail(url=interaction.guild.icon.url)
+
+            balance_str = messages.get('BALANCE_FIELD_VALUE', "{balance} coin").format(balance=f"{user_data['balance']:,}")
+            embed.add_field(name=f"```{messages.get('BALANCE_FIELD_NAME', 'Số dư')}```", value=balance_str, inline=False)
+            
+            shop_roles_db = db.get_shop_roles(interaction.guild.id)
+            if shop_roles_db:
+                shop_role_ids = {r['role_id'] for r in shop_roles_db}
+                owned_roles = [f"`{role.name}`" for role in interaction.user.roles if role.id in shop_role_ids]
+                
+                owned_roles_str = "\n".join(owned_roles) if owned_roles else "Chưa sở hữu role nào."
+                embed.add_field(name="<:MenheraFlower:1406458230317645906> Role Shop đã sở hữu", value=owned_roles_str, inline=False)
+
+            currency_cog = self.bot.get_cog("CurrencyHandler")
+            if currency_cog:
+                multiplier = currency_cog._get_boost_multiplier(interaction.user, guild_config, user_data)
+                
+                # lay so boost tu db da duoc dong bo
+                fake_boosts = user_data.get('fake_boosts', 0)
+                real_boosts = user_data.get('real_boosts', 0)
+                boost_count = fake_boosts if fake_boosts > 0 else real_boosts
+
+                if multiplier > 1.0:
+                    embed.add_field(
+                        name="<a:zgif_BoosterBadgesRoll:1406487084583358474> Ưu Đãi Booster",
+                        value=f"```diff\n+ Bạn đang nhận x{multiplier:.1f} coin từ {boost_count} boost!\n```",
+                        inline=False
+                    )
+
+            if guild_config.get('SHOP_EMBED_IMAGE_URL'):
+                embed.set_image(url=guild_config['SHOP_EMBED_IMAGE_URL'])
+
+            footer_text = guild_config.get('FOOTER_MESSAGES', {}).get('ACCOUNT_INFO', '')
+            embed.set_footer(text=f"────────────────────\n{footer_text}", icon_url=self.bot.user.avatar.url)
+            
+            custom_role = db.get_custom_role(interaction.user.id, interaction.guild.id)
+            view = AccountView(bot=self.bot, guild_config=guild_config, guild_id=interaction.guild.id, custom_role=custom_role)
+            
+            try:
+                message = await interaction.user.send(embed=embed, view=view)
+                view.message = message # luu lai message de edit sau khi timeout
+                await interaction.followup.send("✅ Đã gửi thông tin tài khoản vào tin nhắn riêng của bạn!", ephemeral=True)
+            except discord.Forbidden:
+                await interaction.followup.send("<a:c_947079524435247135:1274398161200484446> Tôi không thể gửi tin nhắn riêng cho bạn. Vui lòng bật tin nhắn từ thành viên server.", ephemeral=True)
+
+        except discord.NotFound:
+            # bat loi "Unknown Interaction"
+            logging.warning("Bo qua mot tuong tac khong con hop le (co the do bot khoi dong lai hoac timeout).")
+        except Exception as e:
+            logging.error(f"Loi khong mong muon trong account_button_callback: {e}")
+            # co gang phan hoi cho nguoi dung neu co the
+            if not interaction.response.is_done():
+                await interaction.followup.send("Đã có lỗi xảy ra, vui lòng thử lại sau.", ephemeral=True)
+
 
 async def setup(bot):
     pass
