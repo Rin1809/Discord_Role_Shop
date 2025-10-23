@@ -10,7 +10,7 @@ class CurrencyHandler(commands.Cog):
         self.leaderboard_messages = {}
         self.update_leaderboard.start()
         self.check_custom_roles.start()
-        self.sync_real_boosts.start() 
+        self.sync_real_boosts.start()
 
     def cog_unload(self):
         self.update_leaderboard.cancel()
@@ -42,6 +42,101 @@ class CurrencyHandler(commands.Cog):
         final_multiplier = base_multiplier + ((effective_boost_count - 1) * per_boost_addition)
         
         return max(1.0, final_multiplier) # dam bao khong bao gio < 1.0
+
+    def _get_activity_rate(self, channel: discord.TextChannel, guild_config: dict, activity_type: str) -> int:
+        """
+        Lay ty le kiem coin chinh xac cho mot hoat dong (tin nhan/reaction).
+        Uu tien: Channel > Category > Default.
+        """
+        rates_config = guild_config.get('CURRENCY_RATES', {})
+        rate_key = 'MESSAGES_PER_COIN' if activity_type == 'message' else 'REACTIONS_PER_COIN'
+
+        # 1. Kiem tra channel-specific rate
+        channel_rates = rates_config.get('channels', {}).get(str(channel.id))
+        if channel_rates and channel_rates.get(rate_key):
+            return channel_rates[rate_key]
+
+        # 2. Kiem tra category-specific rate
+        if channel.category_id:
+            category_rates = rates_config.get('categories', {}).get(str(channel.category_id))
+            if category_rates and category_rates.get(rate_key):
+                return category_rates[rate_key]
+
+        # 3. Lay default rate
+        return rates_config.get('default', {}).get(rate_key)
+
+    async def _process_activity(self, member: discord.Member, channel: discord.TextChannel, activity_type: str):
+        """
+        Xu ly logic tang coin tap trung cho tin nhan va reaction.
+        """
+        guild_id = member.guild.id
+        guild_config = self.bot.guild_configs.get(str(guild_id))
+        if not guild_config:
+            return
+
+        rate = self._get_activity_rate(channel, guild_config, activity_type)
+        if not rate or rate <= 0:
+            return
+
+        user_data = db.get_or_create_user(member.id, guild_id)
+        
+        counter_key = 'message_count' if activity_type == 'message' else 'reaction_count'
+        new_count = user_data.get(counter_key, 0) + 1
+
+        if new_count >= rate:
+            multiplier = self._get_boost_multiplier(member, guild_config, user_data)
+            coins_to_add = int(1 * multiplier) # co the mo rong sau
+            
+            new_balance = user_data['balance'] + coins_to_add
+            
+            db.update_user_data(
+                member.id, 
+                guild_id, 
+                balance=new_balance, 
+                **{counter_key: 0} # reset counter
+            )
+
+            # log gd
+            db.log_transaction(
+                guild_id=guild_id,
+                user_id=member.id,
+                transaction_type=f'earn_{activity_type}',
+                item_name=f'Earned from {channel.name}',
+                amount_changed=coins_to_add,
+                new_balance=new_balance
+            )
+        else:
+            db.update_user_data(member.id, guild_id, **{counter_key: new_count})
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        # ktr co ban
+        if message.author.bot or not message.guild or not isinstance(message.channel, discord.TextChannel):
+            return
+            
+        # ktr thread, neu la chu thread thi bo qua
+        if isinstance(message.channel, discord.Thread) and message.author.id == message.channel.owner_id:
+            return
+            
+        # xu ly
+        await self._process_activity(message.author, message.channel, 'message')
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
+        # ktr co ban
+        if not payload.guild_id or not payload.member or payload.member.bot:
+            return
+
+        channel = self.bot.get_channel(payload.channel_id)
+        if not channel or not isinstance(channel, discord.TextChannel):
+            return
+            
+        # ktr thread, neu la chu thread thi bo qua
+        if isinstance(channel, discord.Thread) and payload.user_id == channel.owner_id:
+            return
+
+        # xu ly
+        await self._process_activity(payload.member, channel, 'reaction')
 
     @tasks.loop(minutes=5)
     async def sync_real_boosts(self):
