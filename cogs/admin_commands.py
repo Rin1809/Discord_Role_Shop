@@ -81,7 +81,7 @@ class AdminCommands(commands.Cog):
             await self.bot.reload_guild_config(guild_id)
             
             # restart task
-            task_cog = self.bot.get_cog('TasksHandler')
+            task_cog = self.bot.get_cog('CurrencyHandler')
             if task_cog:
                 task_cog.update_leaderboard.restart()
 
